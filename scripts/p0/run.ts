@@ -37,18 +37,19 @@ function requireEnv(name: string): string {
   return value;
 }
 
-// ---------- 事件结构（im.message.receive_v1，schema 2.0）----------
+// ---------- 事件结构（im.message.receive_v1，SDK parse 后）----------
+// 注意：SDK 长连接 handler 收到的数据已把 header/event 字段展平到顶层：
+// { schema, event_id, event_type, ..., sender: {...}, message: {...} }
+// （不是 webhook 原始的 { header, event: { sender, message } } 包装结构）
 interface ReceiveEvent {
-  event?: {
-    sender?: { sender_id?: { open_id?: string }; sender_type?: string };
-    message?: {
-      message_id?: string;
-      chat_id?: string;
-      chat_type?: string;
-      message_type?: string;
-      create_time?: string;
-      content?: string;
-    };
+  sender?: { sender_id?: { open_id?: string }; sender_type?: string };
+  message?: {
+    message_id?: string;
+    chat_id?: string;
+    chat_type?: string;
+    message_type?: string;
+    create_time?: string;
+    content?: string;
   };
 }
 
@@ -175,9 +176,7 @@ async function replyText(chatId: string, text: string): Promise<void> {
 }
 
 // ---------- 资源类消息处理 ----------
-async function handleResource(
-  msg: NonNullable<NonNullable<ReceiveEvent["event"]>["message"]>,
-): Promise<void> {
+async function handleResource(msg: NonNullable<ReceiveEvent["message"]>): Promise<void> {
   let content: Record<string, unknown> = {};
   try {
     content = JSON.parse(msg.content ?? "{}") as Record<string, unknown>;
@@ -218,10 +217,12 @@ async function handleResource(
 
 // ---------- 事件入口（3 秒时限：轻活同步，重活异步不 await）----------
 async function onReceive(data: ReceiveEvent): Promise<void> {
-  const ev = data.event;
-  const msg = ev?.message;
-  const sender = ev?.sender;
-  if (!msg?.message_id) return;
+  const msg = data.message;
+  const sender = data.sender;
+  if (!msg?.message_id) {
+    console.log(`[raw] 结构不符，原样打印前 400 字符：${JSON.stringify(data).slice(0, 400)}`);
+    return;
+  }
 
   const createTimeLocal = new Date(Number(msg.create_time ?? Date.now())).toLocaleString("zh-CN", {
     timeZone: "Asia/Shanghai",

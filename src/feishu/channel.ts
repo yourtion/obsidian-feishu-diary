@@ -26,25 +26,29 @@ export interface IncomingMessage {
 
 export type ChannelStatus = "connecting" | "online" | "reconnecting" | "offline" | "failed";
 
+/**
+ * SDK 长连接 handler 收到的事件（im.message.receive_v1，schema 2.0）。
+ * 注意：SDK 的 EventDispatcher.parse 已把 header/event 展平到顶层，
+ * handler 拿到的是 { schema, event_id, event_type, ..., sender, message }，
+ * 不是 webhook 原始的 { header, event: { sender, message } } 包装结构。
+ */
 interface RawReceiveEvent {
-  event?: {
-    sender?: { sender_id?: { open_id?: string } };
-    message?: {
-      message_id?: string;
-      chat_id?: string;
-      chat_type?: string;
-      message_type?: string;
-      create_time?: string;
-      content?: string;
-    };
+  sender?: { sender_id?: { open_id?: string } };
+  message?: {
+    message_id?: string;
+    chat_id?: string;
+    chat_type?: string;
+    message_type?: string;
+    create_time?: string;
+    content?: string;
   };
 }
 
 /** SDK 原始事件 → IncomingMessage；结构性不完整时返回 null。 */
 export function normalizeIncoming(raw: unknown): IncomingMessage | null {
-  const event = (raw as RawReceiveEvent)?.event;
-  const message = event?.message;
-  const openId = event?.sender?.sender_id?.open_id;
+  const data = raw as RawReceiveEvent | null;
+  const message = data?.message;
+  const openId = data?.sender?.sender_id?.open_id;
   if (!message?.message_id || !message.chat_id || !openId) return null;
 
   let text = "";
@@ -70,12 +74,19 @@ export function normalizeIncoming(raw: unknown): IncomingMessage | null {
 
 export class FeishuChannel {
   private wsClient: Lark.WSClient | null = null;
+  private readonly creds: FeishuCreds;
+  private readonly onMessage: (msg: IncomingMessage) => Promise<void> | void;
+  private readonly onStatus: (status: ChannelStatus, detail?: string) => void;
 
   constructor(
-    private readonly creds: FeishuCreds,
-    private readonly onMessage: (msg: IncomingMessage) => Promise<void> | void,
-    private readonly onStatus: (status: ChannelStatus, detail?: string) => void,
-  ) {}
+    creds: FeishuCreds,
+    onMessage: (msg: IncomingMessage) => Promise<void> | void,
+    onStatus: (status: ChannelStatus, detail?: string) => void,
+  ) {
+    this.creds = creds;
+    this.onMessage = onMessage;
+    this.onStatus = onStatus;
+  }
 
   async start(): Promise<void> {
     this.onStatus("connecting");
