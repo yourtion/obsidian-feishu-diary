@@ -1,6 +1,5 @@
-onlyBuiltDependencies:
-  - esbuild
-  - protobufjs
-  - oxlint
 minimumReleaseAge: 0
 verifyDepsBeforeRun: false
+allowBuilds:
+  esbuild: true
+  protobufjs: false

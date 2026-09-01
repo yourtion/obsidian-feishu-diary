@@ -1,6 +1,6 @@
 {
   "name": "obsidian-feishu-diary",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Talk to a Feishu bot, and it lands in your Obsidian vault as a diary.",
   "keywords": [
     "diary",
