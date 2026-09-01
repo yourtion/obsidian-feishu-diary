@@ -20,7 +20,7 @@ export class FeishuDiarySettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Feishu Diary" });
+    new Setting(containerEl).setName("Feishu Diary").setHeading();
     containerEl.createEl("p", {
       text: "推荐直接扫码创建应用（自动配置权限与事件订阅）；也可手动在飞书开放平台创建后填入凭据（见项目 scripts/p0/README.md）。",
     });

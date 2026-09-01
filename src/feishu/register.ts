@@ -71,12 +71,12 @@ interface PollResponse {
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
       resolve();
     }, ms);
     function onAbort(): void {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
       reject(new Error("abort"));
     }
     if (signal.aborted) {

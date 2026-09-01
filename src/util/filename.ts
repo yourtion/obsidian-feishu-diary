@@ -4,6 +4,7 @@
 export function sanitizeFileName(name: string): string {
   // 控制字符匹配是有意为之（消毒）。
   // oxlint-disable-next-line no-control-regex
+  // eslint-disable-next-line no-control-regex
   const cleaned = name.replace(/[/\\:*?"<>|\x00-\x1f]/g, "_").trim();
   return cleaned.slice(0, 120);
 }

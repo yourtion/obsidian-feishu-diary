@@ -117,7 +117,7 @@ export class FeishuChannel {
   async stop(): Promise<void> {
     const client = this.wsClient;
     this.wsClient = null;
-    if (client) await client.close();
+    if (client) client.close();
     this.onStatus("offline");
   }
 

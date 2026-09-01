@@ -4,12 +4,18 @@
  * process 语义：文件不存在时视内容为空字符串并落盘结果；
  * 路径逐级建目录（Obsidian createFolder 不递归）。
  */
-import { normalizePath, TFile, type Vault } from "obsidian";
+import { normalizePath, TFile, type FileManager, type Vault } from "obsidian";
 import type { VaultLike } from "../core/writer.ts";
 import { randomSuffix } from "../util/filename.ts";
 
 export class ObsidianVaultAdapter implements VaultLike {
-  constructor(private readonly vault: Vault) {}
+  private readonly vault: Vault;
+  private readonly fileManager: FileManager;
+
+  constructor(vault: Vault, fileManager: FileManager) {
+    this.vault = vault;
+    this.fileManager = fileManager;
+  }
 
   private async ensureFolders(path: string): Promise<void> {
     const segments = path.split("/").slice(0, -1);
@@ -41,7 +47,8 @@ export class ObsidianVaultAdapter implements VaultLike {
     const normalized = normalizePath(path);
     const file = this.vault.getAbstractFileByPath(normalized);
     if (file instanceof TFile) {
-      await this.vault.trash(file, true);
+      // trashFile 尊重用户的删除偏好（系统废纸篓 / .trash 目录）。
+      await this.fileManager.trashFile(file);
     }
   }
 

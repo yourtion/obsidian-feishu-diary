@@ -6,7 +6,7 @@
  */
 import { Notice, Plugin } from "obsidian";
 import { FeishuChannel } from "./feishu/channel.ts";
-import type { ChannelStatus, IncomingMessage } from "./feishu/channel.ts";
+import type { IncomingMessage } from "./feishu/channel.ts";
 import { EMOJI_DONE, EMOJI_DOING, FeishuClient } from "./feishu/client.ts";
 import { ObsidianVaultAdapter } from "./feishu/vault-adapter.ts";
 import { createObsidianHttpInstance } from "./feishu/http.ts";
@@ -45,7 +45,7 @@ export default class FeishuDiaryPlugin extends Plugin {
 
   override async onload(): Promise<void> {
     await this.loadSettings();
-    this.vaultAdapter = new ObsidianVaultAdapter(this.app.vault);
+    this.vaultAdapter = new ObsidianVaultAdapter(this.app.vault, this.app.fileManager);
     this.writer = new DiaryWriter(this.vaultAdapter, this.settings.rootDir);
     this.addSettingTab(new FeishuDiarySettingTab(this.app, this));
     this.statusBarItem = this.addStatusBarItem();
@@ -122,7 +122,7 @@ export default class FeishuDiaryPlugin extends Plugin {
     this.client = null;
   }
 
-  private setStatus(status: ChannelStatus | string, detail?: string): void {
+  private setStatus(status: string, detail?: string): void {
     if (!this.statusBarItem) return;
     this.statusBarItem.setText(`🪶 ${status}`);
     if (detail) console.warn(`[feishu-diary] 通道状态 ${status}: ${detail}`);
@@ -261,7 +261,6 @@ export default class FeishuDiaryPlugin extends Plugin {
         this.settings.ownerOpenId,
         `今天还没记日记，睡前跟我说两句吧${nickname}。`,
       );
-      console.log(`[feishu-diary] 已发送每日提醒（missStreak=${decision.state.missStreak}）`);
     } catch (err) {
       console.warn("[feishu-diary] 提醒发送失败（今日不再重试）:", err);
     }
