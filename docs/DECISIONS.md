@@ -41,6 +41,7 @@ Ogg/Opus 直存（Obsidian 可直接播）；飞书官方 ASR 是设置开关而
 - 手动创建路径保留（README 提供权限批量导入 JSON）
 - ✅ P0-7 实测结论（2026-09-01，后台截图确认）：扫码创建的应用**默认订阅方式即「长连接」**，addons 预填的事件（im.message.receive_v1，应用身份）与权限全部生效——扫码后无需进后台改订阅方式
 - ⚠️ 踩坑记录：配置界面对 ≠ 配置已生效——权限/事件/订阅方式的每次变更都需「创建新版本并发布」才在线上生效，这是首次跑 p0 收不到事件的真实原因
+- ⚠️ 踩坑记录：scope 名必须精确——不存在的权限名（如 `im:message.reactions:send`）会被 addons 确认页静默忽略，直到调 API 才 403（99991672）。正确名是 `im:message.reactions:write_only`。教训：权限名不确定时先查 scope-list 文档，不要按语义猜
 - 兜底：p0:diag 第 [4] 步会 PATCH application/v7/config 幂等自愈（需 application:application:patch 权限，已加入 init 与插件的 addons）
 
 ## 技术栈与架构约定

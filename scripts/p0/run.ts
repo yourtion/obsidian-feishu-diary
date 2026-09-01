@@ -1,8 +1,9 @@
 /**
- * P0 通道验证脚本（主链路）。
+ * P0 通道验证脚本（主链路，npm run p0 / p0:debug）。
  *
  * 验证目标：
- *  1. WebSocket 长连接收消息（官方 SDK 路线）
+ *  1. WebSocket 长连接收消息（官方 SDK 路线）——复用插件本体的 normalizeIncoming，
+ *     P0 验证的就是插件真实使用的解析代码
  *  2. 机器人主动发消息（官方 SDK 路线）
  *  3. 表情回复两态：执行中 → 完成（裸 REST 路线，验证自实现可行性）
  *  4. 消息资源下载：image / file / audio / media（裸 REST 路线）
@@ -14,6 +15,8 @@ import * as Lark from "@larksuiteoapi/node-sdk";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import process from "node:process";
+import { normalizeIncoming } from "../../src/feishu/channel.ts";
+import type { IncomingMessage } from "../../src/feishu/channel.ts";
 
 const HERE = dirname(new URL(import.meta.url).pathname);
 const DOWNLOAD_DIR = join(HERE, "downloads");
@@ -31,26 +34,10 @@ const appSecret = requireEnv("FEISHU_APP_SECRET");
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
-    console.error(`缺少 ${name}。请先 cp scripts/p0/.env.example scripts/p0/.env 并填写。`);
+    console.error(`缺少 ${name}。请先运行 npm run p0:init（扫码后自动写入 scripts/p0/.env）。`);
     process.exit(1);
   }
   return value;
-}
-
-// ---------- 事件结构（im.message.receive_v1，SDK parse 后）----------
-// 注意：SDK 长连接 handler 收到的数据已把 header/event 字段展平到顶层：
-// { schema, event_id, event_type, ..., sender: {...}, message: {...} }
-// （不是 webhook 原始的 { header, event: { sender, message } } 包装结构）
-interface ReceiveEvent {
-  sender?: { sender_id?: { open_id?: string }; sender_type?: string };
-  message?: {
-    message_id?: string;
-    chat_id?: string;
-    chat_type?: string;
-    message_type?: string;
-    create_time?: string;
-    content?: string;
-  };
 }
 
 // ---------- 裸 REST：tenant_access_token 自管理（验证自实现路线）----------
@@ -176,79 +163,69 @@ async function replyText(chatId: string, text: string): Promise<void> {
 }
 
 // ---------- 资源类消息处理 ----------
-async function handleResource(msg: NonNullable<ReceiveEvent["message"]>): Promise<void> {
+async function handleResource(msg: IncomingMessage): Promise<void> {
   let content: Record<string, unknown> = {};
   try {
-    content = JSON.parse(msg.content ?? "{}") as Record<string, unknown>;
+    content = JSON.parse(msg.content || "{}") as Record<string, unknown>;
   } catch {
     /* content 非法则跳过下载 */
   }
-  const messageId = msg.message_id ?? "";
-  const createTime = Number(msg.create_time ?? Date.now());
-  const stamp = new Date(createTime).toISOString().replace(/[-:T]/g, "").slice(0, 15);
+  const stamp = new Date(msg.createTimeMs).toISOString().replace(/[-:T]/g, "").slice(0, 15);
 
-  if (msg.message_type === "image" && typeof content.image_key === "string") {
-    await downloadResource(messageId, content.image_key, "image", `${stamp}-image.png`);
-  } else if (msg.message_type === "file" && typeof content.file_key === "string") {
+  if (msg.messageType === "image" && typeof content.image_key === "string") {
+    await downloadResource(msg.messageId, content.image_key, "image", `${stamp}-image.png`);
+  } else if (msg.messageType === "file" && typeof content.file_key === "string") {
     await downloadResource(
-      messageId,
+      msg.messageId,
       content.file_key,
       "file",
       `${stamp}-${String(content.file_name ?? "file")}`,
     );
-  } else if (msg.message_type === "audio" && typeof content.file_key === "string") {
+  } else if (msg.messageType === "audio" && typeof content.file_key === "string") {
     await downloadResource(
-      messageId,
+      msg.messageId,
       content.file_key,
       "file",
       `${stamp}-audio-${String(content.duration ?? 0)}ms.opus`,
     );
-  } else if (msg.message_type === "media" && typeof content.file_key === "string") {
+  } else if (msg.messageType === "media" && typeof content.file_key === "string") {
     await downloadResource(
-      messageId,
+      msg.messageId,
       content.file_key,
       "file",
       `${stamp}-${String(content.file_name ?? "video.mp4")}`,
     );
   } else {
-    console.log(`[download] 跳过类型 ${msg.message_type}（不支持或无 file_key）`);
+    console.log(`[download] 跳过类型 ${msg.messageType}（不支持或无 file_key）`);
   }
 }
 
 // ---------- 事件入口（3 秒时限：轻活同步，重活异步不 await）----------
-async function onReceive(data: ReceiveEvent): Promise<void> {
-  const msg = data.message;
-  const sender = data.sender;
-  if (!msg?.message_id) {
-    console.log(`[raw] 结构不符，原样打印前 400 字符：${JSON.stringify(data).slice(0, 400)}`);
+async function onReceive(raw: unknown): Promise<void> {
+  const msg = normalizeIncoming(raw);
+  if (!msg) {
+    console.log(`[raw] 结构不符，原样打印前 400 字符：${JSON.stringify(raw).slice(0, 400)}`);
     return;
   }
 
-  const createTimeLocal = new Date(Number(msg.create_time ?? Date.now())).toLocaleString("zh-CN", {
+  const createTimeLocal = new Date(msg.createTimeMs).toLocaleString("zh-CN", {
     timeZone: "Asia/Shanghai",
   });
-  const summary =
-    msg.message_type === "text"
-      ? (JSON.parse(msg.content ?? "{}").text ?? "")
-      : (msg.content ?? "").slice(0, 80);
-  console.log(`\n[event] ${msg.chat_type ?? "?"} | ${msg.message_type} | ${msg.message_id}`);
-  console.log(
-    `       create_time=${createTimeLocal} | open_id=${sender?.sender_id?.open_id?.slice(0, 16)}…`,
-  );
-  console.log(`       content=${String(summary).slice(0, 120)}`);
+  console.log(`\n[event] ${msg.chatType || "?"} | ${msg.messageType} | ${msg.messageId}`);
+  console.log(`       create_time=${createTimeLocal} | open_id=${msg.senderOpenId.slice(0, 16)}…`);
+  console.log(`       content=${(msg.text || msg.content).slice(0, 120)}`);
 
-  const record = {
-    message_id: msg.message_id,
-    chat_id: msg.chat_id,
-    chat_type: msg.chat_type,
-    message_type: msg.message_type,
-    create_time: msg.create_time,
-    open_id: sender?.sender_id?.open_id,
-    content: msg.content?.slice(0, 500),
-  };
-  await logEvent("im.message.receive_v1", record);
+  await logEvent("im.message.receive_v1", {
+    message_id: msg.messageId,
+    chat_id: msg.chatId,
+    chat_type: msg.chatType,
+    message_type: msg.messageType,
+    create_time: msg.createTimeMs,
+    open_id: msg.senderOpenId,
+    content: msg.content.slice(0, 500),
+  });
 
-  if (msg.chat_type !== "p2p") {
+  if (msg.chatType !== "p2p") {
     console.log("       （群聊消息，跳过——MVP 只处理单聊）");
     return;
   }
@@ -256,22 +233,22 @@ async function onReceive(data: ReceiveEvent): Promise<void> {
   // 重活异步执行，不阻塞 handler 返回（模拟插件内队列）
   void (async () => {
     try {
-      const doingReaction = await addReaction(msg.message_id as string, EMOJI_DOING);
+      const doingReaction = await addReaction(msg.messageId, EMOJI_DOING);
       await replyText(
-        msg.chat_id as string,
-        `[p0] 已收到 ${msg.message_type} 消息，create_time=${createTimeLocal}`,
+        msg.chatId,
+        `[p0] 已收到 ${msg.messageType} 消息，create_time=${createTimeLocal}`,
       );
-      if (["image", "file", "audio", "media"].includes(msg.message_type ?? "")) {
+      if (["image", "file", "audio", "media"].includes(msg.messageType)) {
         await handleResource(msg);
       }
       if (doingReaction) {
-        await removeReaction(msg.message_id as string, doingReaction);
+        await removeReaction(msg.messageId, doingReaction);
       }
-      await addReaction(msg.message_id as string, EMOJI_DONE);
+      await addReaction(msg.messageId, EMOJI_DONE);
       console.log(`[pipeline] 完成 ✅`);
     } catch (err) {
       console.error(`[pipeline] 失败 ❌`, err);
-      await logEvent("pipeline-error", { message_id: msg.message_id, error: String(err) });
+      await logEvent("pipeline-error", { message_id: msg.messageId, error: String(err) });
     }
   })();
 }
@@ -279,7 +256,7 @@ async function onReceive(data: ReceiveEvent): Promise<void> {
 // ---------- 启动 ----------
 async function main(): Promise<void> {
   await mkdir(DOWNLOAD_DIR, { recursive: true });
-  console.log(`P0 通道验证启动（SDK ${LarkWsClientVersion()}）`);
+  console.log(`P0 通道验证启动（App ID: ${appId}）`);
   console.log(`事件日志: ${LOG_FILE}`);
   console.log(`下载目录: ${DOWNLOAD_DIR}\n`);
 
@@ -295,22 +272,19 @@ async function main(): Promise<void> {
   await logEvent("startup", { note: "ws client started" });
 
   console.log(`
-✅ 长连接已建立。若在飞书发消息后这里毫无反应，按顺序检查（保持本脚本在线）：
+✅ 长连接已建立，在飞书里给机器人发条消息试试（Ctrl+C 退出）。
+   发消息后毫无反应？按实测踩坑概率排序检查：
 
-  1. 订阅方式：open.feishu.cn → 你的应用 → 事件与回调 → 订阅方式
-     必须选「使用长连接接收事件」并保存（脚本不在线时保存不了）
-  2. 添加事件：同页「添加事件」→ 搜索「接收消息」→ 添加 im.message.receive_v1
-  3. 权限生效：权限管理确认已开通（可批量导入 README 的 JSON）
-  4. 应用发布：版本管理与发布 → 创建版本 → 申请发布（自建应用自审自批，
-     未发布的版本权限不生效）
-  5. 对话入口：飞书搜索机器人名字开单聊（不是群里 @）
+  1. 版本发布（最高频）：权限/事件/订阅方式的每次变更，都必须
+     「版本管理与发布 → 创建版本 → 发布」才线上生效——配置页面对 ≠ 已生效
+  2. 进程唯一：长连接是集群模式，多个 p0 进程在线时事件随机推给其中一个
+     （lsof +Ti:node 查一下，杀掉多余的）
+  3. 事件订阅：后台「事件与回调」确认 im.message.receive_v1 已订阅
+  4. 分不清时跑 npm run p0:diag 一键分诊（出站测试 + 自动修复入站配置）
 
-现在可以在飞书里发消息试试了（Ctrl+C 退出）
+   注意：本脚本连上后打印的 SDK 英文提示与 ws client ready 是通用输出，
+   不代表后台配置状态；要观测服务端是否推帧用 npm run p0:debug。
 `);
-}
-
-function LarkWsClientVersion(): string {
-  return (Lark as unknown as { VERSION?: string }).VERSION ?? "unknown";
 }
 
 main().catch((err) => {
