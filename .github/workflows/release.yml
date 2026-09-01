@@ -34,7 +34,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${GITHUB_REF#refs/tags/}"
-          if [ "$(jq -r .version manifest.json)" != "$tag" ]; then
-            echo "tag $tag does not match manifest.json version" && exit 1
+          if [ "$(jq -r .version manifest.json)" != "$tag" ] || [ "$(jq -r .version package.json)" != "$tag" ]; then
+            echo "tag $tag does not match manifest.json/package.json version" && exit 1
           fi
           gh release create "$tag" --title "$tag" --generate-notes main.js manifest.json styles.css
