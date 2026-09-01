@@ -1,0 +1,31 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Create release with plugin assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          if [ "$(jq -r .version manifest.json)" != "$tag" ]; then
+            echo "tag $tag does not match manifest.json version" && exit 1
+          fi
+          gh release create "$tag" --title "$tag" --generate-notes main.js manifest.json styles.css

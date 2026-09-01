@@ -88,13 +88,14 @@ sender, message}`——**`data.message` 直接取，没有 `data.event` 包装**
 ## 当前状态（2026-09-01）
 
 Phase 1（消息管线）+ Phase 2（媒体入库）+ Phase 3 核心（每日提醒）代码完成，
-51 单测全绿。P0 实测：事件接收/表情两态/机器人回复全通；ASR 免费版不可用
-（99991400，配额为零，转写开关默认关）。
+51 单测全绿。**真机验证通过**（插件装入 Obsidian：长连接收发/表情回执/扫码
+创建/附件下载全链路正常）。P0 除断线补推实验外全部关闭：ASR 免费版不可用
+（转写开关默认关）、Electron 兼容性靠 requestUrl 注入解决。
 
-待验证（用户侧）：P0-1 断线补推实验（决定要不要补拉模块）、附件下载实测
-（发图/文件/语音）、Obsidian 播放 .opus、插件装进 Obsidian 真机（SDK 在
-Electron 的兼容性是最大未知数；不兼容则自实现长连接，协议公开）。
+待验证：P0-1 断线补推实验（决定要不要历史消息补拉模块）。
 
-待开发：P0-1 结论若需补拉则加历史消息模块；Phase 4（语音气泡样式、撤回事件
-同步 im.message.recalled_v1、富文本消息、ASR 自配 OpenAI 兼容开关、上架社区
-市场）。
+待开发：P0-1 结论若需补拉则加历史消息模块；发布准备已就绪（README 英文版
+
+- 网络披露 + release workflow + 不 minify），剩 push GitHub → 打 tag →
+  community.obsidian.md 提交；Phase 4（语音气泡样式、撤回事件同步
+  im.message.recalled_v1、富文本消息、ASR 自配 OpenAI 兼容开关）。

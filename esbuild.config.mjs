@@ -33,7 +33,8 @@ const context = await esbuild.context({
   logLevel: "info",
   sourcemap: prod ? false : "inline",
   treeShaking: true,
-  minify: prod,
+  // 不 minify：社区插件审核要求代码可审查（禁止混淆），minify 处于灰区，保守不压缩。
+  minify: false,
   outfile: "main.js",
   platform: "node",
 });
