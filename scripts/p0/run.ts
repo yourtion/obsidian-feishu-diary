@@ -17,6 +17,7 @@ import { dirname, join } from "node:path";
 import process from "node:process";
 import { normalizeIncoming } from "../../src/feishu/channel.ts";
 import { MessageDeduper } from "../../src/util/dedupe.ts";
+import { attachmentStamp } from "../../src/util/time.ts";
 import type { IncomingMessage } from "../../src/feishu/channel.ts";
 
 const HERE = dirname(new URL(import.meta.url).pathname);
@@ -171,7 +172,8 @@ async function handleResource(msg: IncomingMessage): Promise<void> {
   } catch {
     /* content 非法则跳过下载 */
   }
-  const stamp = new Date(msg.createTimeMs).toISOString().replace(/[-:T]/g, "").slice(0, 15);
+  // 与插件一致的附件命名：东八区 YYYY-MM-DD-HHmm（toISOString 是 UTC，跨天会错日期）。
+  const stamp = attachmentStamp(msg.createTimeMs);
 
   if (msg.messageType === "image" && typeof content.image_key === "string") {
     await downloadResource(msg.messageId, content.image_key, "image", `${stamp}-image.png`);
@@ -183,12 +185,7 @@ async function handleResource(msg: IncomingMessage): Promise<void> {
       `${stamp}-${String(content.file_name ?? "file")}`,
     );
   } else if (msg.messageType === "audio" && typeof content.file_key === "string") {
-    await downloadResource(
-      msg.messageId,
-      content.file_key,
-      "file",
-      `${stamp}-audio-${String(content.duration ?? 0)}ms.opus`,
-    );
+    await downloadResource(msg.messageId, content.file_key, "file", `${stamp}-voice.opus`);
   } else if (msg.messageType === "media" && typeof content.file_key === "string") {
     await downloadResource(
       msg.messageId,
