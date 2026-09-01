@@ -1,11 +1,13 @@
 /**
  * FeishuClient——飞书开放平台 REST 封装（tenant_access_token 自管理）。
  *
- * 长连接（WSClient）由 @larksuiteoapi/node-sdk 承担；本类只做简单 REST 调用，
- * 依赖面最小，便于在 Electron renderer 环境下排查问题。
+ * 出站统一走 obsidian requestUrl（见 http.ts）：Electron renderer 的 fetch/XHR
+ * 受 CORS 约束（实测 accounts/open.feishu.cn 均不返回 CORS 头）。
+ * 长连接（WSClient）由 SDK 承担，其 HTTP 层已注入同款 requestUrl 实现。
  */
 
-const FEISHU_BASE = "https://open.feishu.cn";
+import { requestBinary, requestJson } from "./http.ts";
+import type { HttpResponse } from "./http.ts";
 
 export class FeishuApiError extends Error {
   constructor(
@@ -35,12 +37,14 @@ export class FeishuClient {
 
   private async tenantAccessToken(): Promise<string> {
     if (this.tokenCache && Date.now() < this.tokenCache.expireAt) return this.tokenCache.token;
-    const res = await fetch(`${FEISHU_BASE}/open-apis/auth/v3/tenant_access_token/internal`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ app_id: this.creds.appId, app_secret: this.creds.appSecret }),
-    });
-    const body = (await res.json()) as {
+    const res = await requestJson(
+      "POST",
+      "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+      {
+        body: { app_id: this.creds.appId, app_secret: this.creds.appSecret },
+      },
+    );
+    const body = res.data as {
       code?: number;
       msg?: string;
       tenant_access_token?: string;
@@ -58,50 +62,42 @@ export class FeishuClient {
     return this.tokenCache.token;
   }
 
-  private async request(path: string, init: RequestInit): Promise<unknown> {
+  private async request(
+    path: string,
+    method: "POST" | "DELETE",
+    body?: unknown,
+  ): Promise<HttpResponse> {
     const token = await this.tenantAccessToken();
-    const res = await fetch(`${FEISHU_BASE}${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        ...init.headers,
-      },
-    });
-    const body = (await res.json().catch(() => ({}))) as { code?: number; msg?: string };
-    if (!res.ok || body.code !== 0) {
-      throw new FeishuApiError(res.status, body.code ?? -1, body.msg ?? res.statusText);
+    const res = await requestJson(method, `https://open.feishu.cn${path}`, { token, body });
+    const data = res.data as { code?: number; msg?: string };
+    if (!judgeOk(res) || data.code !== 0) {
+      throw new FeishuApiError(res.status, data.code ?? -1, data.msg ?? String(res.data));
     }
-    return body;
+    return res;
   }
 
   /** 给用户发文本消息（p2p）。 */
   async sendText(openId: string, text: string): Promise<void> {
-    await this.request("/open-apis/im/v1/messages?receive_id_type=open_id", {
-      method: "POST",
-      body: JSON.stringify({
-        receive_id: openId,
-        content: JSON.stringify({ text }),
-        msg_type: "text",
-      }),
+    await this.request("/open-apis/im/v1/messages?receive_id_type=open_id", "POST", {
+      receive_id: openId,
+      content: JSON.stringify({ text }),
+      msg_type: "text",
     });
   }
 
   /** 添加表情回复，返回 reaction_id。 */
   async addReaction(messageId: string, emojiType: string): Promise<string> {
-    const body = (await this.request(`/open-apis/im/v1/messages/${messageId}/reactions`, {
-      method: "POST",
-      body: JSON.stringify({ reaction_type: { emoji_type: emojiType } }),
-    })) as { data?: { reaction_id?: string } };
-    const reactionId = body.data?.reaction_id;
-    if (!reactionId) throw new FeishuApiError(200, -1, "addReaction: no reaction_id in response");
+    const res = await this.request(`/open-apis/im/v1/messages/${messageId}/reactions`, "POST", {
+      reaction_type: { emoji_type: emojiType },
+    });
+    const reactionId = (res.data as { data?: { reaction_id?: string } }).data?.reaction_id;
+    if (!reactionId)
+      throw new FeishuApiError(res.status, -1, "addReaction: no reaction_id in response");
     return reactionId;
   }
 
   async removeReaction(messageId: string, reactionId: string): Promise<void> {
-    await this.request(`/open-apis/im/v1/messages/${messageId}/reactions/${reactionId}`, {
-      method: "DELETE",
-    });
+    await this.request(`/open-apis/im/v1/messages/${messageId}/reactions/${reactionId}`, "DELETE");
   }
 
   /** 下载消息资源（image 用 type=image，其余用 file），返回二进制与 Content-Type。 */
@@ -111,20 +107,30 @@ export class FeishuClient {
     type: "image" | "file",
   ): Promise<{ buffer: ArrayBuffer; contentType: string | null }> {
     const token = await this.tenantAccessToken();
-    const res = await fetch(
-      `${FEISHU_BASE}/open-apis/im/v1/messages/${messageId}/resources/${fileKey}?type=${type}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
+    const res = await requestBinary(
+      `https://open.feishu.cn/open-apis/im/v1/messages/${messageId}/resources/${fileKey}?type=${type}`,
+      token,
     );
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { code?: number; msg?: string };
-      throw new FeishuApiError(res.status, body.code ?? -1, body.msg ?? "download failed");
+    if (res.status < 200 || res.status >= 300 || res.buffer.byteLength === 0) {
+      const err = parseBody(res.text) as { code?: number; msg?: string };
+      throw new FeishuApiError(res.status, err.code ?? -1, err.msg ?? res.text.slice(0, 120));
     }
-    return { buffer: await res.arrayBuffer(), contentType: res.headers.get("content-type") };
+    return { buffer: res.buffer, contentType: res.contentType };
   }
 }
 
-/** 表情回复的两态 emoji key（飞书表情 key，P0 实测后如有更贴切的再调整）。 */
+function parseBody(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { msg: text };
+  }
+}
+
+function judgeOk(res: HttpResponse): boolean {
+  return res.status >= 200 && res.status < 300;
+}
+
+/** 表情回复的两态 emoji key（飞书表情 key，P0 实测通过）。 */
 export const EMOJI_DOING = "OnIt";
 export const EMOJI_DONE = "DONE";

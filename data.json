@@ -1,0 +1,12 @@
+{
+  "rootDir": "FeishuDiary",
+  "appId": "cli_aa1c5db1e2f8dcc1",
+  "ownerOpenId": null,
+  "nickname": "",
+  "reminderEnabled": true,
+  "reminderTime": "21:30",
+  "reminderState": {
+    "lastRemindDate": null,
+    "missStreak": 0
+  }
+}

@@ -9,6 +9,7 @@ import { FeishuChannel } from "./feishu/channel.ts";
 import type { ChannelStatus, IncomingMessage } from "./feishu/channel.ts";
 import { EMOJI_DONE, EMOJI_DOING, FeishuClient } from "./feishu/client.ts";
 import { ObsidianVaultAdapter } from "./feishu/vault-adapter.ts";
+import { createObsidianHttpInstance } from "./feishu/http.ts";
 import { classify } from "./core/intents.ts";
 import { DiaryWriter, diaryPath } from "./core/writer.ts";
 import { attachmentBlock, attachmentPath } from "./core/attachments.ts";
@@ -102,6 +103,7 @@ export default class FeishuDiaryPlugin extends Plugin {
     this.client = new FeishuClient({ appId, appSecret });
     this.channel = new FeishuChannel(
       { appId, appSecret },
+      createObsidianHttpInstance(),
       (msg) => this.handleMessage(msg),
       (s, d) => this.setStatus(s, d),
     );

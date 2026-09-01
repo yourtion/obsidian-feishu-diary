@@ -8,6 +8,7 @@
  * 本类只做通道与规范化，不做业务；handler 的异常在这里兜底吞掉并记录。
  */
 import * as Lark from "@larksuiteoapi/node-sdk";
+import type { HttpInstance } from "@larksuiteoapi/node-sdk";
 import type { FeishuCreds } from "./client.ts";
 
 export interface IncomingMessage {
@@ -75,15 +76,18 @@ export function normalizeIncoming(raw: unknown): IncomingMessage | null {
 export class FeishuChannel {
   private wsClient: Lark.WSClient | null = null;
   private readonly creds: FeishuCreds;
+  private readonly httpInstance: HttpInstance;
   private readonly onMessage: (msg: IncomingMessage) => Promise<void> | void;
   private readonly onStatus: (status: ChannelStatus, detail?: string) => void;
 
   constructor(
     creds: FeishuCreds,
+    httpInstance: HttpInstance,
     onMessage: (msg: IncomingMessage) => Promise<void> | void,
     onStatus: (status: ChannelStatus, detail?: string) => void,
   ) {
     this.creds = creds;
+    this.httpInstance = httpInstance;
     this.onMessage = onMessage;
     this.onStatus = onStatus;
   }
@@ -94,6 +98,9 @@ export class FeishuChannel {
       appId: this.creds.appId,
       appSecret: this.creds.appSecret,
       loggerLevel: Lark.LoggerLevel.warn,
+      // SDK 内置 axios/XHR 在 Electron renderer 被 CORS 拦（建连拉配置即失败），
+      // httpInstance 由装配层注入（Obsidian 下为 requestUrl 实现）。
+      httpInstance: this.httpInstance,
       onReady: () => this.onStatus("online"),
       onReconnecting: () => this.onStatus("reconnecting"),
       onReconnected: () => this.onStatus("online"),

@@ -1,23 +1,19 @@
 /**
- * 一键创建应用（扫码授权）——基于 SDK registerApp（OAuth 2.0 Device Flow，RFC 8628）。
+ * 一键创建应用（扫码授权）——OAuth 2.0 Device Flow（RFC 8628）的 requestUrl 实现。
  *
- * 用户在飞书扫码确认后：自动创建企业自建应用、按 addons 预填权限与事件订阅，
- * 直接返回 App ID / App Secret，无需手动进入开发者后台。
+ * 为什么不用 SDK 的 registerApp：其内部走 axios/XHR，在 Electron renderer 被 CORS
+ * 拦截（accounts.feishu.cn 无 CORS 头，实测 Network Error）。协议仅 begin/poll 两个
+ * action，此处按 SDK 同款语义重写，出站统一走 obsidian requestUrl（主进程）。
  *
- * 基座选择 preset:false（仅机器人能力、无业务权限），只申请下方显式声明的能力，
+ * 基座 preset:false（仅机器人能力、无业务权限），只申请下方显式声明的能力，
  * 与「bot 只认识一串匿名编号」的隐私理念一致。
- *
- * ⚠️ 事件订阅方式（长连接）属于敏感配置，不能随 addons 预填——若新应用默认
- * 不是长连接，用户仍需在开发者后台把订阅方式切为「使用长连接接收事件」。
  */
-import { registerApp } from "@larksuiteoapi/node-sdk";
+import { gzipSync } from "node:zlib";
+import { postForm } from "./http.ts";
 
-/** registerApp 返回值（SDK 未导出该接口类型，按结构重新声明）。 */
-export interface RegisterResult {
-  client_id: string;
-  client_secret: string;
-  user_info?: { open_id?: string };
-}
+const FEISHU_ACCOUNTS = "https://accounts.feishu.cn";
+const LARK_ACCOUNTS = "https://accounts.larksuite.com";
+const REG_ENDPOINT = "/oauth/v1/app/registration";
 
 /** 插件运行所需的全部应用身份权限（tenant scopes）。 */
 export const REQUIRED_SCOPES = [
@@ -28,10 +24,17 @@ export const REQUIRED_SCOPES = [
   "speech_to_text:speech",
   // 允许应用修改自身开发配置（事件订阅方式切 websocket、订阅事件）
   "application:application:patch",
-] as const;
+];
 
 /** 需要订阅的事件。 */
-export const REQUIRED_EVENTS = ["im.message.receive_v1"] as const;
+export const REQUIRED_EVENTS = ["im.message.receive_v1"];
+
+/** 扫码结果。 */
+export interface RegisterResult {
+  client_id: string;
+  client_secret: string;
+  user_info?: { open_id?: string; tenant_brand?: string };
+}
 
 export interface ScanCallbacks {
   /** 验证链接就绪：渲染二维码/链接给用户。 */
@@ -40,28 +43,139 @@ export interface ScanCallbacks {
   onStatus?: (status: string) => void;
 }
 
+/** 与 SDK encodeAddons 同款：base64url(gzip(json))。 */
+function encodeAddons(payload: object): string {
+  return gzipSync(Buffer.from(JSON.stringify(payload), "utf8"))
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+interface BeginResponse {
+  device_code?: string;
+  verification_uri_complete?: string;
+  expires_in?: number;
+  interval?: number;
+  error?: string;
+  error_description?: string;
+}
+
+interface PollResponse {
+  client_id?: string;
+  client_secret?: string;
+  user_info?: { open_id?: string; tenant_brand?: string };
+  error?: string;
+  error_description?: string;
+}
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort(): void {
+      clearTimeout(timer);
+      reject(new Error("abort"));
+    }
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /**
- * 发起扫码建应用流程。resolve 即拿到凭据；用户拒绝/超时/取消则 reject（code 字段）。
+ * 发起扫码建应用流程。resolve 即拿到凭据；用户拒绝/超时/取消则 reject（message 为错误码）。
  */
-export function createAppByScan(
+export async function createAppByScan(
   callbacks: ScanCallbacks,
   signal: AbortSignal,
 ): Promise<RegisterResult> {
-  return registerApp({
-    source: "obsidian-feishu-diary",
-    createOnly: true,
-    appPreset: {
-      name: "Feishu Diary",
-      desc: "把飞书消息记进 Obsidian 的日记机器人（{user} 自用）",
-    },
-    addons: {
+  // 1. begin：申请设备码与验证链接
+  let begin: { status: number; data: BeginResponse };
+  try {
+    begin = (await postForm(`${FEISHU_ACCOUNTS}${REG_ENDPOINT}`, {
+      action: "begin",
+      archetype: "PersonalAgent",
+      auth_method: "client_secret",
+      request_user_info: "open_id",
+    })) as { status: number; data: BeginResponse };
+  } catch (err) {
+    throw new Error(`begin 请求失败：${err instanceof Error ? err.message : String(err)}`);
+  }
+  const beginData = begin.data;
+  if (!beginData.device_code || !beginData.verification_uri_complete) {
+    throw new Error(
+      `begin 失败：HTTP ${begin.status} ${beginData.error ?? ""} ${beginData.error_description ?? ""}`.trim(),
+    );
+  }
+
+  // 2. 组装确认页 URL（参数与 SDK 完全一致）
+  const qrUrl = new URL(beginData.verification_uri_complete);
+  qrUrl.searchParams.set("from", "sdk");
+  qrUrl.searchParams.set("source", "obsidian-feishu-diary");
+  qrUrl.searchParams.set("tp", "sdk");
+  qrUrl.searchParams.set("name", "Feishu Diary");
+  qrUrl.searchParams.set("desc", "把飞书消息记进 Obsidian 的日记机器人");
+  qrUrl.searchParams.set(
+    "addons",
+    encodeAddons({
       preset: false,
       scopes: { tenant: [...REQUIRED_SCOPES], user: [] },
       events: { items: { tenant: [...REQUIRED_EVENTS], user: [] } },
-    },
-    signal,
-    onQRCodeReady: (info) =>
-      callbacks.onQRCodeReady({ url: info.url, expireInSeconds: info.expireIn }),
-    onStatusChange: (info) => callbacks.onStatus?.(info.status),
-  });
+    }),
+  );
+  qrUrl.searchParams.set("createOnly", "true");
+
+  const expireInSeconds = beginData.expires_in ?? 600;
+  callbacks.onQRCodeReady({ url: qrUrl.toString(), expireInSeconds });
+
+  // 3. 轮询直到授权完成/过期/取消
+  let interval = (beginData.interval ?? 5) * 1000;
+  let baseUrl = FEISHU_ACCOUNTS;
+  const deadline = Date.now() + expireInSeconds * 1000;
+
+  for (;;) {
+    const res = (await postForm(`${baseUrl}${REG_ENDPOINT}`, {
+      action: "poll",
+      device_code: beginData.device_code,
+    })) as { status: number; data: PollResponse };
+    const data = res.data;
+
+    // Lark 租户：切换域名后立即重试
+    if (data.user_info?.tenant_brand === "lark" && baseUrl !== LARK_ACCOUNTS) {
+      baseUrl = LARK_ACCOUNTS;
+      callbacks.onStatus?.("domain_switched");
+      continue;
+    }
+
+    if (data.client_id && data.client_secret) {
+      const result: RegisterResult = {
+        client_id: data.client_id,
+        client_secret: data.client_secret,
+      };
+      if (data.user_info) result.user_info = data.user_info;
+      return result;
+    }
+
+    switch (data.error) {
+      case "authorization_pending":
+        callbacks.onStatus?.("polling");
+        break;
+      case "slow_down":
+        interval += 5000;
+        callbacks.onStatus?.("slow_down");
+        break;
+      case undefined:
+        throw new Error(`poll 返回空结果：HTTP ${res.status}`);
+      default:
+        throw new Error(`${data.error}: ${data.error_description ?? "未知错误"}`);
+    }
+
+    if (Date.now() + interval > deadline) throw new Error("expired_token");
+    await sleep(interval, signal);
+  }
 }
