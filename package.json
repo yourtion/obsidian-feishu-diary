@@ -22,6 +22,7 @@
     "p0:init": "node scripts/p0/init.ts",
     "p0:diag": "node --env-file=scripts/p0/.env scripts/p0/diag.ts",
     "p0": "node --env-file=scripts/p0/.env scripts/p0/run.ts",
+    "p0:debug": "FEISHU_DEBUG=1 node --env-file=scripts/p0/.env scripts/p0/run.ts",
     "p0:asr": "node --env-file=scripts/p0/.env scripts/p0/asr-probe.ts"
   },
   "dependencies": {

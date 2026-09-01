@@ -282,7 +282,10 @@ async function main(): Promise<void> {
   console.log(`事件日志: ${LOG_FILE}`);
   console.log(`下载目录: ${DOWNLOAD_DIR}\n`);
 
-  const wsClient = new Lark.WSClient({ appId, appSecret, loggerLevel: Lark.LoggerLevel.info });
+  // debug 模式（FEISHU_DEBUG=1）：打印服务端推送的每个事件帧（含未匹配 dispatcher 的事件）
+  const loggerLevel =
+    process.env.FEISHU_DEBUG === "1" ? Lark.LoggerLevel.debug : Lark.LoggerLevel.info;
+  const wsClient = new Lark.WSClient({ appId, appSecret, loggerLevel });
   await wsClient.start({
     eventDispatcher: new Lark.EventDispatcher({}).register({
       "im.message.receive_v1": onReceive,
