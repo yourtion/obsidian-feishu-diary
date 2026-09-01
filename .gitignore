@@ -1,0 +1,7 @@
+node_modules/
+main.js
+scripts/p0/.env
+scripts/p0/downloads/
+scripts/p0/p0-log.jsonl
+.DS_Store
+*.map
