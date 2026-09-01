@@ -280,8 +280,7 @@ async function main(): Promise<void> {
   await mkdir(DOWNLOAD_DIR, { recursive: true });
   console.log(`P0 通道验证启动（SDK ${LarkWsClientVersion()}）`);
   console.log(`事件日志: ${LOG_FILE}`);
-  console.log(`下载目录: ${DOWNLOAD_DIR}`);
-  console.log(`等待消息中——请在飞书里给机器人发文字 / 图片 / 文件 / 语音试试（Ctrl+C 退出）\n`);
+  console.log(`下载目录: ${DOWNLOAD_DIR}\n`);
 
   const wsClient = new Lark.WSClient({ appId, appSecret, loggerLevel: Lark.LoggerLevel.info });
   await wsClient.start({
@@ -290,6 +289,20 @@ async function main(): Promise<void> {
     }),
   });
   await logEvent("startup", { note: "ws client started" });
+
+  console.log(`
+✅ 长连接已建立。若在飞书发消息后这里毫无反应，按顺序检查（保持本脚本在线）：
+
+  1. 订阅方式：open.feishu.cn → 你的应用 → 事件与回调 → 订阅方式
+     必须选「使用长连接接收事件」并保存（脚本不在线时保存不了）
+  2. 添加事件：同页「添加事件」→ 搜索「接收消息」→ 添加 im.message.receive_v1
+  3. 权限生效：权限管理确认已开通（可批量导入 README 的 JSON）
+  4. 应用发布：版本管理与发布 → 创建版本 → 申请发布（自建应用自审自批，
+     未发布的版本权限不生效）
+  5. 对话入口：飞书搜索机器人名字开单聊（不是群里 @）
+
+现在可以在飞书里发消息试试了（Ctrl+C 退出）
+`);
 }
 
 function LarkWsClientVersion(): string {
