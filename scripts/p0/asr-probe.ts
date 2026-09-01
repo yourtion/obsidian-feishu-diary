@@ -54,17 +54,22 @@ function synthTonePcm(): Buffer {
 async function main(): Promise<void> {
   const token = await tenantAccessToken();
   const audio = synthTonePcm();
-  const audioBase64 = `data:audio/pcm;rate=${SAMPLE_RATE};base64,${audio.toString("base64")}`;
 
   console.log(
     `合成 PCM: ${audio.length} bytes（${DURATION_SECONDS}s @ ${SAMPLE_RATE}Hz 16bit mono）`,
   );
   console.log("调用 speech_to_text/v1/speech/file_recognize（engine=16k_auto）…\n");
 
+  // 请求体结构（官方文档）：speech.speech = 裸 base64（不带 data: 前缀）；
+  // config 必须带 file_id（16 位字母数字下划线，调用方生成）与 format。
+  const fileId = "p0probe" + Math.random().toString(36).slice(2, 10);
   const res = await fetch(`${FEISHU_BASE}/open-apis/speech_to_text/v1/speech/file_recognize`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ config: { engine_type: "16k_auto" }, audio: audioBase64 }),
+    body: JSON.stringify({
+      speech: { speech: audio.toString("base64") },
+      config: { file_id: fileId, format: "pcm", engine_type: "16k_auto" },
+    }),
   });
   const body = (await res.json().catch(() => ({}))) as {
     code?: number;
@@ -76,13 +81,15 @@ async function main(): Promise<void> {
   console.log(`code=${body.code ?? "?"} msg=${body.msg ?? "?"}`);
   console.log(`data=${JSON.stringify(body.data ?? null)}`);
 
-  if (res.status === 403 || (body.code !== undefined && body.code !== 0)) {
-    console.log(
-      "\n结论：❌ 接口不可用（大概率免费版租户限制）→ 语音转写按「存原声为默认、转写做成开关」落地。",
-    );
-  } else {
+  if (body.code === 0) {
     console.log("\n结论：✅ 接口可用（正弦波无可识别语音，空文本属正常）→ 转写可进主链路候选。");
+    return;
   }
+  console.log(`\n结论：❌ 接口不可用（code=${body.code}）`);
+  console.log("  - 99992402 = 参数校验失败（本脚本若格式正确不应出现，出现请对照文档）");
+  console.log(
+    "  - 其他错误码大概率是文档所述「免费版不支持调用」→ 语音按「存原声为默认、转写做成开关」落地",
+  );
 }
 
 main().catch((err) => {
