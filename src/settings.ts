@@ -1,4 +1,7 @@
 /** 插件设置。App Secret 不在此处——走 Obsidian SecretStorage（≥1.11.4）。 */
+import { DEFAULT_REMINDER_STATE } from "./core/reminder.ts";
+import type { ReminderState } from "./core/reminder.ts";
+
 export interface FeishuDiarySettings {
   /** 日记根目录（vault 内相对路径）。 */
   rootDir: string;
@@ -8,6 +11,12 @@ export interface FeishuDiarySettings {
   ownerOpenId: string | null;
   /** 「叫我XX」设置的称呼。 */
   nickname: string;
+  /** 每日提醒开关。 */
+  reminderEnabled: boolean;
+  /** 提醒时间（HH:mm，东八区）。 */
+  reminderTime: string;
+  /** 提醒状态机（与 ReminderState 同构持久化）。 */
+  reminderState: ReminderState;
 }
 
 /** SecretStorage id（约束：小写字母数字与连字符）。 */
@@ -18,4 +27,7 @@ export const DEFAULT_SETTINGS: FeishuDiarySettings = {
   appId: "",
   ownerOpenId: null,
   nickname: "",
+  reminderEnabled: true,
+  reminderTime: "21:30",
+  reminderState: { ...DEFAULT_REMINDER_STATE },
 };

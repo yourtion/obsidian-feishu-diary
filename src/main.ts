@@ -10,11 +10,13 @@ import type { ChannelStatus, IncomingMessage } from "./feishu/channel.ts";
 import { EMOJI_DONE, EMOJI_DOING, FeishuClient } from "./feishu/client.ts";
 import { ObsidianVaultAdapter } from "./feishu/vault-adapter.ts";
 import { classify } from "./core/intents.ts";
-import { DiaryWriter } from "./core/writer.ts";
+import { DiaryWriter, diaryPath } from "./core/writer.ts";
 import { attachmentBlock, attachmentPath } from "./core/attachments.ts";
 import type { MediaKind } from "./core/attachments.ts";
+import { decideReminder } from "./core/reminder.ts";
 import { extFromContentType } from "./util/filename.ts";
 import { MessageDeduper } from "./util/dedupe.ts";
+import { logicalDate, timeParts } from "./util/time.ts";
 import { DEFAULT_SETTINGS, SECRET_ID } from "./settings.ts";
 import type { FeishuDiarySettings } from "./settings.ts";
 import { FeishuDiarySettingTab } from "./ui/settings-tab.ts";
@@ -48,6 +50,9 @@ export default class FeishuDiaryPlugin extends Plugin {
     this.statusBarItem = this.addStatusBarItem();
     this.register(() => void this.stopChannel());
     await this.startChannel();
+    // 开机补发：错过到点的提醒在启动时补一次；此后每分钟 tick。
+    void this.tickReminder();
+    this.registerInterval(window.setInterval(() => void this.tickReminder(), 60_000));
   }
 
   override onunload(): void {
@@ -228,6 +233,46 @@ export default class FeishuDiaryPlugin extends Plugin {
     await writer.append(msg.createTimeMs, attachmentBlock(kind, savedName));
   }
 
+  /**
+   * 每日提醒 tick：到点（HH:mm ≥ reminderTime）且当天没记才提；
+   * 状态每次 tick 持久化；发送按返回码记录，不重试（零预判）。
+   */
+  private async tickReminder(): Promise<void> {
+    if (!this.settings.reminderEnabled || !this.settings.ownerOpenId || !this.client) return;
+    const now = Date.now();
+    if (timeParts(now).time < this.settings.reminderTime) return;
+
+    const today = logicalDate(now);
+    const hasTodayEntry =
+      this.app.vault.getAbstractFileByPath(diaryPath(this.settings.rootDir, today)) !== null;
+
+    const decision = decideReminder(this.settings.reminderState, { today, hasTodayEntry });
+    if (decision.state !== this.settings.reminderState) {
+      this.settings.reminderState = decision.state;
+      await this.saveSettings();
+    }
+    if (!decision.remind) return;
+
+    const nickname = this.settings.nickname ? `，${this.settings.nickname}` : "";
+    try {
+      await this.client.sendText(
+        this.settings.ownerOpenId,
+        `今天还没记日记，睡前跟我说两句吧${nickname}。`,
+      );
+      console.log(`[feishu-diary] 已发送每日提醒（missStreak=${decision.state.missStreak}）`);
+    } catch (err) {
+      console.warn("[feishu-diary] 提醒发送失败（今日不再重试）:", err);
+    }
+  }
+
+  /** 记了日记即视为响应提醒：清零沉默计数（否则连提 3 天后进入永久沉默）。 */
+  private resetReminderStreak(): void {
+    if (this.settings.reminderState.missStreak !== 0) {
+      this.settings.reminderState = { ...this.settings.reminderState, missStreak: 0 };
+      void this.saveSettings();
+    }
+  }
+
   /** 表情两态回执：doing → 工作 → done。表情失败不阻塞主流程。 */
   private async withReceipt(msg: IncomingMessage, work: () => Promise<void>): Promise<void> {
     let doingReactionId: string | null = null;
@@ -238,6 +283,7 @@ export default class FeishuDiaryPlugin extends Plugin {
     }
     try {
       await work();
+      this.resetReminderStreak();
     } catch (err) {
       console.error("[feishu-diary] 写入失败:", err);
       await this.reply(

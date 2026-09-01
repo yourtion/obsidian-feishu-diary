@@ -102,6 +102,34 @@ export class FeishuDiarySettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName("每日提醒")
+      .setDesc(
+        "当天还没记才提醒；连续 3 天没记就沉默，记一篇即恢复。Obsidian 未运行时错过会在启动时补发",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.reminderEnabled).onChange(async (value) => {
+          this.plugin.settings.reminderEnabled = value;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName("提醒时间")
+      .setDesc("HH:mm（东八区），默认 21:30")
+      .addText((text) =>
+        text
+          .setPlaceholder("21:30")
+          .setValue(this.plugin.settings.reminderTime)
+          .onChange(async (value) => {
+            const trimmed = value.trim();
+            if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed)) {
+              this.plugin.settings.reminderTime = trimmed;
+              await this.plugin.saveSettings();
+            }
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("重新连接")
       .setDesc("凭据或订阅方式变更后，重启长连接")
       .addButton((button) =>
