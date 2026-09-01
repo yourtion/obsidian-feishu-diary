@@ -64,6 +64,13 @@ sender, message}`——**`data.message` 直接取，没有 `data.event` 包装**
    `npm run p0:debug` 看有没有 `receive message` 行。
 8. **官方文档有 markdown 源**：`open.feishu.cn/document/...` 的 URL 加 `.md`
    后缀直接 curl 可得，无需浏览器。
+9. **Electron 兼容性（P0-3 实测结论）**：SDK 的 HTTP（WSClient 建连拉配置
+   POST /callback/ws/endpoint、registerApp 设备流）全部走 axios/XHR，在
+   Electron renderer（origin `app://obsidian.md`）被 CORS 拦——飞书域不返回
+   CORS 头。**解法不是自实现长连接**：`WSClient` 构造参数支持注入
+   `httpInstance`，用 obsidian `requestUrl`（主进程网络栈）实现并注入即可；
+   插件所有 HTTP 出站统一走 `feishu/http.ts` 的 requestUrl 封装。WebSocket
+   本身不受 CORS（ws 库直连）。**禁止在插件运行时代码里用 fetch/axios 访问飞书域**。
 
 ## 代码约定（工具链强制的）
 
