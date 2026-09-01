@@ -86,7 +86,7 @@ npm run p0:asr
        "tenant": [
          "im:message.p2p_msg:readonly",
          "im:message:send_as_bot",
-         "im:resource",
+         "im:message:readonly",
          "im:message.reactions:write_only",
          "speech_to_text:speech",
          "application:application:patch"

@@ -16,6 +16,7 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { normalizeIncoming } from "../../src/feishu/channel.ts";
+import { MessageDeduper } from "../../src/util/dedupe.ts";
 import type { IncomingMessage } from "../../src/feishu/channel.ts";
 
 const HERE = dirname(new URL(import.meta.url).pathname);
@@ -201,10 +202,17 @@ async function handleResource(msg: IncomingMessage): Promise<void> {
 }
 
 // ---------- 事件入口（3 秒时限：轻活同步，重活异步不 await）----------
+// 飞书会重复推送事件（实测同一 message_id 收到两遍），必须按 message_id 去重。
+const deduper = new MessageDeduper();
+
 async function onReceive(raw: unknown): Promise<void> {
   const msg = normalizeIncoming(raw);
   if (!msg) {
     console.log(`[raw] 结构不符，原样打印前 400 字符：${JSON.stringify(raw).slice(0, 400)}`);
+    return;
+  }
+  if (!deduper.checkAndAdd(msg.messageId)) {
+    console.log(`[dedupe] 重复推送，忽略 ${msg.messageId}`);
     return;
   }
 
