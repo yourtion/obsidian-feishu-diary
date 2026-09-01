@@ -108,8 +108,8 @@ if (sendRes.ok && sendBody.code === 0) {
 }
 
 // ---------- 4. 入站修复：订阅方式切 websocket + 订阅接收消息事件 ----------
-// 扫码创建（addons）无法预填订阅方式（敏感配置），应用默认多为 webhook——
-// 事件全部发往不存在的服务器地址，长连接自然收不到。这里程序化修复。
+// 实测（P0-7）：扫码创建的应用默认订阅方式即长连接，addons 的事件预填也生效。
+// 此步作为幂等自愈兜底（配置漂移/后台误改/事件丢失时一键修复）。
 const patchRes = await fetch(
   `${FEISHU_BASE}/open-apis/application/v7/applications/${appId}/config`,
   {
