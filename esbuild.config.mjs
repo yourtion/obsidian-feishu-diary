@@ -33,6 +33,9 @@ const context = await esbuild.context({
   logLevel: "info",
   sourcemap: prod ? false : "inline",
   treeShaking: true,
+  // 优先 SDK 的 ESM 入口：CJS barrel 是单文件（6MB+）无法 tree-shake，
+  // ESM 入口可级联删除未引用代码，产物从 6.1MB 降到约 1MB。
+  mainFields: ["module", "main"],
   // 不 minify：社区插件审核要求代码可审查（禁止混淆），minify 处于灰区，保守不压缩。
   minify: false,
   outfile: "main.js",
