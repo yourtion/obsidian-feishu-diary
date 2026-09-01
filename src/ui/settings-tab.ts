@@ -6,6 +6,7 @@ import { Notice, PluginSettingTab, Setting } from "obsidian";
 import type { App } from "obsidian";
 import type FeishuDiaryPlugin from "../main.ts";
 import { SECRET_ID } from "../settings.ts";
+import { ScanSetupModal } from "./scan-setup-modal.ts";
 
 export class FeishuDiarySettingTab extends PluginSettingTab {
   constructor(
@@ -21,8 +22,20 @@ export class FeishuDiarySettingTab extends PluginSettingTab {
 
     containerEl.createEl("h2", { text: "Feishu Diary" });
     containerEl.createEl("p", {
-      text: "需要先在飞书开放平台创建企业自建应用并添加机器人（见项目 scripts/p0/README.md 的接入步骤），然后填入凭据。",
+      text: "推荐直接扫码创建应用（自动配置权限与事件订阅）；也可手动在飞书开放平台创建后填入凭据（见项目 scripts/p0/README.md）。",
     });
+
+    new Setting(containerEl)
+      .setName("一键创建应用（推荐）")
+      .setDesc("用手机飞书扫码确认后，自动创建自建应用、开通所需权限与事件订阅，凭据自动保存")
+      .addButton((button) =>
+        button.setButtonText("扫码创建").onClick(() => {
+          new ScanSetupModal(this.app, async (result) => {
+            await this.plugin.applyScanResult(result.appId, result.appSecret, result.openId);
+            this.display();
+          }).open();
+        }),
+      );
 
     new Setting(containerEl)
       .setName("App ID")

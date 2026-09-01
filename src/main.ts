@@ -65,6 +65,15 @@ export default class FeishuDiaryPlugin extends Plugin {
     this.app.secretStorage.setSecret(SECRET_ID, secret);
   }
 
+  /** 扫码一键创建应用成功后：写入凭据、扫码者提前认主、重连。 */
+  async applyScanResult(appId: string, appSecret: string, openId?: string): Promise<void> {
+    this.settings.appId = appId;
+    if (!this.settings.ownerOpenId && openId) this.settings.ownerOpenId = openId;
+    await this.saveSettings();
+    await this.storeAppSecret(appSecret);
+    await this.restartChannel();
+  }
+
   /** 凭据变更 / 首次配置后调用。 */
   async restartChannel(): Promise<void> {
     await this.stopChannel();

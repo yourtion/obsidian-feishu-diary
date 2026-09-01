@@ -23,10 +23,12 @@
     "p0:asr": "node --env-file=scripts/p0/.env scripts/p0/asr-probe.ts"
   },
   "dependencies": {
-    "@larksuiteoapi/node-sdk": "^1.73.1"
+    "@larksuiteoapi/node-sdk": "^1.73.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
+    "@types/qrcode": "^1.5.6",
     "esbuild": "^0.25.0",
     "obsidian": "^1.11.4",
     "oxfmt": "^0.65.0",
