@@ -86,10 +86,9 @@ async function main(): Promise<void> {
     return;
   }
   console.log(`\n结论：❌ 接口不可用（code=${body.code}）`);
-  console.log("  - 99992402 = 参数校验失败（本脚本若格式正确不应出现，出现请对照文档）");
-  console.log(
-    "  - 其他错误码大概率是文档所述「免费版不支持调用」→ 语音按「存原声为默认、转写做成开关」落地",
-  );
+  console.log("  - 99991400 = 频控（2026-09-01 实测：免费租户单次调用即触发，");
+  console.log("    与文档「免费版不支持调用」吻合 = 免费版 ASR 配额为零）");
+  console.log("  → 语音按「存原声为默认、转写做成开关（默认关）」落地（DECISIONS D6）");
 }
 
 main().catch((err) => {
