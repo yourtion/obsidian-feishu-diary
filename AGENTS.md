@@ -18,6 +18,7 @@ pnpm run release    # 发版唯一入口：同步 package/manifest/versions 三�
 
 包管理器为 **pnpm 11**（锁文件 pnpm-lock.yaml；CI 用 pnpm/action-setup@v4）。
 pnpm 11 的坑（都踩过）：
+
 - 设置的新家是 **pnpm-workspace.yaml**，package.json 的 `pnpm` 字段已不读
   （`onlyBuiltDependencies` 构建脚本白名单、`minimumReleaseAge: 0`（默认供应链
   策略会拦截刚发布的依赖版本）、`verifyDepsBeforeRun: false` 都在这里）

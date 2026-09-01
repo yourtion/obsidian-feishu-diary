@@ -6,7 +6,7 @@
  */
 import { Modal, Notice } from "obsidian";
 import type { App } from "obsidian";
-import QRCode from "qrcode";
+import { qrSvgDataUri } from "../util/qrcode-svg.ts";
 import { createAppByScan } from "../feishu/register.ts";
 
 export interface ScanResult {
@@ -58,7 +58,7 @@ export class ScanSetupModal extends Modal {
       const result = await createAppByScan(
         {
           onQRCodeReady: ({ url, expireInSeconds }) => {
-            void this.renderQr(qrEl, url);
+            this.renderQr(qrEl, url);
             linkEl.empty();
             linkEl.createEl("a", { text: "扫码不便？点此在浏览器打开", href: url });
             this.setStatus(`等待扫码确认…（${formatSeconds(expireInSeconds)} 后过期）`);
@@ -100,12 +100,12 @@ export class ScanSetupModal extends Modal {
     }
   }
 
-  private async renderQr(qrEl: HTMLElement, url: string): Promise<void> {
+  private renderQr(qrEl: HTMLElement, url: string): void {
     try {
-      const dataUrl = await QRCode.toDataURL(url, { width: 240, margin: 2 });
+      // 纯 SVG 字符串渲染，不创建 canvas/DOM（社区审查要求）
       qrEl.empty();
       const img = qrEl.createEl("img");
-      img.src = dataUrl;
+      img.src = qrSvgDataUri(url);
     } catch (err) {
       console.error("[feishu-diary] 二维码渲染失败:", err);
     }

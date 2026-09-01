@@ -2,9 +2,8 @@
 
 /** 消毒文件名：去除路径分隔符/非法字符/控制字符，限长。 */
 export function sanitizeFileName(name: string): string {
-  // 控制字符匹配是有意为之（消毒）。
-  // oxlint-disable-next-line no-control-regex
-  // eslint-disable-next-line no-control-regex
+  // oxlint-disable-next-line no-control-regex -- 文件名消毒必须匹配控制字符
+  // eslint-disable-next-line no-control-regex -- 文件名消毒必须匹配控制字符
   const cleaned = name.replace(/[/\\:*?"<>|\x00-\x1f]/g, "_").trim();
   return cleaned.slice(0, 120);
 }
