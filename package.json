@@ -19,6 +19,7 @@
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "test": "node --test \"tests/*.test.ts\"",
+    "p0:init": "node scripts/p0/init.ts",
     "p0": "node --env-file=scripts/p0/.env scripts/p0/run.ts",
     "p0:asr": "node --env-file=scripts/p0/.env scripts/p0/asr-probe.ts"
   },
