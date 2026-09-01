@@ -17,7 +17,7 @@ export function qrSvgDataUri(
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-/** 位图矩阵 → SVG 字符串（每个暗块一个单位 path，viewBox 留 4 模块白边）。 */
+/** 位图矩阵 → SVG 字符串（白底黑码 + 4 模块 quiet zone；白底固定，主题无关）。 */
 export function qrToSvg(qr: { modules: { size: number; data: ArrayLike<number> } }): string {
   const size = qr.modules.size;
   const data = qr.modules.data;
@@ -28,6 +28,10 @@ export function qrToSvg(qr: { modules: { size: number; data: ArrayLike<number> }
     }
   }
   const quiet = 4;
-  const vb = `${-quiet} ${-quiet} ${size + quiet * 2} ${size + quiet * 2}`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" shape-rendering="crispEdges"><path d="${path}" fill="#1e1e1e"/></svg>`;
+  const span = size + quiet * 2;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-quiet} ${-quiet} ${span} ${span}" shape-rendering="crispEdges">` +
+    `<rect x="${-quiet}" y="${-quiet}" width="${span}" height="${span}" fill="#ffffff"/>` +
+    `<path d="${path}" fill="#000000"/></svg>`
+  );
 }

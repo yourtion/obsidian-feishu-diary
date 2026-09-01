@@ -3,13 +3,15 @@ import { test } from "node:test";
 import { create } from "qrcode/lib/core/qrcode.js";
 import { qrSvgDataUri, qrToSvg } from "../src/util/qrcode-svg.ts";
 
-test("qrToSvg 输出合法 SVG（viewBox 含 4 模块 quiet zone，暗块为 path）", () => {
+test("qrToSvg 输出合法 SVG（白底黑码 + 4 模块 quiet zone）", () => {
   const qr = create("https://example.com");
   const svg = qrToSvg(qr);
   const size = qr.modules.size;
   assert.ok(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'));
   assert.ok(svg.includes(`viewBox="-4 -4 ${size + 8} ${size + 8}"`));
-  assert.ok(svg.includes('fill="#1e1e3e'.slice(0, 8)) || svg.includes('fill="'));
+  // 暗黑模式兼容：必须有白色背景 rect（透明背景下深码在暗色主题不可见）
+  assert.ok(svg.includes('fill="#ffffff"'));
+  assert.ok(svg.includes('fill="#000000"'));
   assert.ok(svg.includes("<path"));
   assert.ok(svg.endsWith("</svg>"));
 });
