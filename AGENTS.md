@@ -7,14 +7,23 @@
 ## 常用命令
 
 ```sh
-npm run build      # tsc --noEmit + esbuild 产出 main.js（不 minify，tree-shake 后约 1MB）
-npm run test       # node --test（Node 26 原生 type-stripping，零测试框架）
-npm run lint       # oxlint
-npm run fmt        # oxfmt（会重排文件——编辑前重读文件，避免 Edit 冲突）
-npm run dev        # esbuild watch
-npm run release    # 发版唯一入口：同步 package/manifest/versions 三处版本 + commit + tag
-                   # 用法 npm run release [patch|minor|major|x.y.z] [--push]
+pnpm run build      # tsc --noEmit + esbuild 产出 main.js（不 minify，tree-shake 后约 1MB）
+pnpm run test       # node --test（Node 26 原生 type-stripping，零测试框架）
+pnpm run lint       # oxlint
+pnpm run fmt        # oxfmt（会重排文件——编辑前重读文件，避免 Edit 冲突）
+pnpm run dev        # esbuild watch
+pnpm run release    # 发版唯一入口：同步 package/manifest/versions 三处版本 + commit + tag
+                   # 用法 pnpm run release [patch|minor|major|x.y.z] [--push]
 ```
+
+包管理器为 **pnpm 11**（锁文件 pnpm-lock.yaml；CI 用 pnpm/action-setup@v4）。
+pnpm 11 的坑（都踩过）：
+- 设置的新家是 **pnpm-workspace.yaml**，package.json 的 `pnpm` 字段已不读
+  （`onlyBuiltDependencies` 构建脚本白名单、`minimumReleaseAge: 0`（默认供应链
+  策略会拦截刚发布的依赖版本）、`verifyDepsBeforeRun: false` 都在这里）
+- `pnpm run` 默认先自动 `pnpm install` 校验依赖，ignored-builds 报错会卡住
+  所有脚本——上面的 yaml 配置就是解法
+- esbuild 的平台二进制走 optionalDependencies，postinstall 被忽略不影响构建
 
 P0 通道脚本（凭据在 `scripts/p0/.env`，不入库）见 [scripts/p0/README.md](scripts/p0/README.md)：`p0:init`（扫码建应用）/ `p0`（收发验证）/ `p0:debug`（看服务端推帧）/ `p0:diag`（一键分诊）/ `p0:asr`。
 

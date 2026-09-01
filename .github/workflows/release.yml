@@ -13,15 +13,18 @@ jobs:
       attestations: write
       id-token: write
     steps:
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm test
+      - run: pnpm run build
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
         with:

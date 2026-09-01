@@ -1,0 +1,6 @@
+onlyBuiltDependencies:
+  - esbuild
+  - protobufjs
+  - oxlint
+minimumReleaseAge: 0
+verifyDepsBeforeRun: false

@@ -35,11 +35,11 @@ Your App Secret is stored in Obsidian's SecretStorage, never in plugin data file
 ## Development
 
 ```sh
-npm install
-npm run lint && npm run fmt:check
-npm test
-npm run build   # produces main.js
-npm run release # bump version (package/manifest/versions) + commit + tag, all in one
+pnpm install
+pnpm run lint && pnpm run fmt:check
+pnpm test
+pnpm run build   # produces main.js
+pnpm run release # bump version (package/manifest/versions) + commit + tag, all in one
 ```
 
 Channel verification and onboarding scripts live in [scripts/p0/README.md](scripts/p0/README.md); design decisions in [docs/DECISIONS.md](docs/DECISIONS.md).

@@ -5,8 +5,8 @@
 ## 快速开始（一条龙）
 
 ```sh
-npm run p0:init    # 扫码一键创建/更新应用，凭据自动写入 scripts/p0/.env
-npm run p0         # 长连接收发验证（保持在线，去飞书给机器人发消息）
+ppnpm run p0:init    # 扫码一键创建/更新应用，凭据自动写入 scripts/p0/.env
+pnpm run p0         # 长连接收发验证（保持在线，去飞书给机器人发消息）
 ```
 
 `p0:init` 基于 SDK `registerApp`（OAuth 设备授权流，[官方文档](https://open.feishu.cn/document/mcp_open_tools/integrating-agents-with-feishu/scan-to-create-an-app-in-one-click-nodejs)），
@@ -22,11 +22,11 @@ npm run p0         # 长连接收发验证（保持在线，去飞书给机器�
 
 | 命令               | 用途                                                            |
 | ------------------ | --------------------------------------------------------------- |
-| `npm run p0:init`  | 扫码创建/更新应用（幂等）                                       |
-| `npm run p0`       | 主验证：长连接收消息 → 表情两态回执 → 机器人回复 → 附件下载     |
-| `npm run p0:debug` | 同 p0，加 SDK debug 日志——观测服务端推送的每个事件帧            |
-| `npm run p0:diag`  | 一键分诊：进程抢占检查 + 凭据验证 + 出站测试 + 入站配置自动修复 |
-| `npm run p0:asr`   | ASR 免费版可用性实测（合成 PCM 直接探测）                       |
+| `ppnpm run p0:init`  | 扫码创建/更新应用（幂等）                                       |
+| `pnpm run p0`       | 主验证：长连接收消息 → 表情两态回执 → 机器人回复 → 附件下载     |
+| `pnpm run p0:debug` | 同 p0，加 SDK debug 日志——观测服务端推送的每个事件帧            |
+| `pnpm run p0:diag`  | 一键分诊：进程抢占检查 + 凭据验证 + 出站测试 + 入站配置自动修复 |
+| `pnpm run p0:asr`   | ASR 免费版可用性实测（合成 PCM 直接探测）                       |
 
 ## 收不到消息？按实测踩坑概率排查
 
@@ -39,7 +39,7 @@ npm run p0         # 长连接收发验证（保持在线，去飞书给机器�
    直到调 API 才 403/99991672）。
 4. **事件没订阅**：后台「事件与回调」→ 已订阅事件里要有
    `im.message.receive_v1`（应用身份）。
-5. 分不清时：`npm run p0:diag` 一键分诊；`npm run p0:debug` 看服务端推帧。
+5. 分不清时：`pnpm run p0:diag` 一键分诊；`pnpm run p0:debug` 看服务端推帧。
 
 **无用的线索**（别被误导）：SDK 打印的英文配置提示是无条件输出；`ws client ready`
 只代表 WS 层连上，不代表服务端会推事件；debug 日志里 `data: undefined` 正常
@@ -55,7 +55,7 @@ p0 在线时发 2 条消息（记录在案）→ 断网 5 分钟（期间手机�
 ## ASR 可用性实测（P0-2）
 
 ```sh
-npm run p0:asr
+pnpm run p0:asr
 ```
 
 合成 1 秒 16kHz PCM 正弦波调用 `speech_to_text/v1/speech/file_recognize`。
