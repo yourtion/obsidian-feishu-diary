@@ -1,7 +1,7 @@
 {
   "id": "feishu-diary",
   "name": "Feishu Diary",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "minAppVersion": "1.11.4",
   "description": "Talk to a Feishu bot, and it lands in your vault as a diary.",
   "author": "yourtion",
