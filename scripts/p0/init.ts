@@ -37,6 +37,7 @@ try {
           "im:resource",
           "im:message.reactions:send",
           "speech_to_text:speech",
+          "application:application:patch",
         ],
         user: [],
       },

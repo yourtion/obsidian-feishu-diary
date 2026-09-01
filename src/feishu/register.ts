@@ -26,6 +26,8 @@ export const REQUIRED_SCOPES = [
   "im:resource",
   "im:message.reactions:send",
   "speech_to_text:speech",
+  // 允许应用修改自身开发配置（事件订阅方式切 websocket、订阅事件）
+  "application:application:patch",
 ] as const;
 
 /** 需要订阅的事件。 */

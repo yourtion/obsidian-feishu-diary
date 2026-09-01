@@ -91,16 +91,6 @@ const sendBody = (await sendRes.json().catch(() => ({}))) as { code?: number; ms
 
 if (sendRes.ok && sendBody.code === 0) {
   console.log(`[3] ✅ 机器人已给你发了一条测试消息（飞书里应该能收到）`);
-  console.log(`
-结论：出站链路全通（凭据 ✓ 机器人能力 ✓ 发送权限 ✓ 版本发布 ✓）。
-收不到事件的原因只可能是入站侧，逐项核对：
-
-  A. 事件与回调 → 订阅方式：必须是「使用长连接接收事件」
-     （注意：切换后需要保存成功才生效；保存时 npm run p0 要在线）
-  B. 事件与回调 → 已订阅事件：列表里必须有「接收消息 im.message.receive_v1」
-  C. 版本管理与发布：订阅方式/事件变更后需要创建新版本并发布
-  D. 只保留一个 p0 进程（见第 [1] 项检查）
-`);
 } else {
   console.error(`[3] ❌ 发送失败：HTTP ${sendRes.status} code=${sendBody.code} ${sendBody.msg}`);
   const code = sendBody.code;
@@ -113,6 +103,52 @@ if (sendRes.ok && sendBody.code === 0) {
     console.error(`    → 收件人不在应用可用范围内：版本发布时可用范围要包含你自己`);
   } else {
     console.error(`    → 对照 open.feishu.cn 错误码文档排查`);
+  }
+  process.exit(1);
+}
+
+// ---------- 4. 入站修复：订阅方式切 websocket + 订阅接收消息事件 ----------
+// 扫码创建（addons）无法预填订阅方式（敏感配置），应用默认多为 webhook——
+// 事件全部发往不存在的服务器地址，长连接自然收不到。这里程序化修复。
+const patchRes = await fetch(
+  `${FEISHU_BASE}/open-apis/application/v7/applications/${appId}/config`,
+  {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${tokenBody.tenant_access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      event: {
+        subscription_type: "websocket",
+        add_events: ["im.message.receive_v1"],
+      },
+    }),
+  },
+);
+const patchBody = (await patchRes.json().catch(() => ({}))) as { code?: number; msg?: string };
+
+if (patchRes.ok && patchBody.code === 0) {
+  console.log(`[4] ✅ 已修复入站配置：订阅方式=websocket，已订阅 im.message.receive_v1`);
+  console.log(`
+⚠️ 配置修改需要发布新版本才在线上生效：
+   开发者后台 → 版本管理与发布 → 创建版本 → 申请发布（自审自批）
+   发布完成后运行 npm run p0，在飞书发条消息验证。
+`);
+} else {
+  console.error(
+    `[4] ❌ 修复订阅配置失败：HTTP ${patchRes.status} code=${patchBody.code} ${patchBody.msg}`,
+  );
+  if (patchBody.code === 99991672 || patchBody.code === 99991679) {
+    console.error(`    → 缺 application:application:patch 权限或权限未发布生效。`);
+    console.error(
+      `      处理：npm run p0:init 重扫（本次会申请该权限）→ 发布新版本 → 再跑 npm run p0:diag`,
+    );
+  } else {
+    console.error(
+      `    → 手动兜底：后台「事件与回调」→ 订阅方式选「使用长连接接收事件」（p0 在线时保存）`,
+    );
+    console.error(`      → 添加事件 im.message.receive_v1 → 发布新版本`);
   }
   process.exit(1);
 }
