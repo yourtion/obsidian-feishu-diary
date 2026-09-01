@@ -81,9 +81,16 @@ export class ScanSetupModal extends Modal {
       this.close();
     } catch (err) {
       if (this.abort.signal.aborted) return;
-      const code = err instanceof Error ? err.message : String(err);
       this.stopCountdown();
-      this.setStatus(`❌ 流程未完成（${code}）。二维码过期或被取消后可重试。`);
+      // 完整错误进控制台（含 axios 的 code/response，诊断 Electron 网络问题用）
+      console.error("[feishu-diary] 扫码创建失败:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      const detail = (err as { response?: { status?: number; data?: unknown } }).response
+        ? ` HTTP ${(err as { response: { status?: number } }).response.status}`
+        : "";
+      this.setStatus(
+        `❌ 流程未完成（${message}${detail}）。完整错误已打印到控制台（Ctrl+Cmd+I）。`,
+      );
       const retry = this.contentEl.createEl("button", { text: "重新获取二维码" });
       retry.onclick = () => {
         retry.remove();
