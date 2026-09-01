@@ -52,16 +52,21 @@ Ogg/Opus 直存（Obsidian 可直接播）；飞书官方 ASR 是设置开关而
 - TS strict + oxlint + oxfmt + esbuild + node:test（Node 原生 type-stripping 跑测试，零测试框架依赖）
 - Node type-stripping 约束：不用 enum / constructor parameter properties 等不可擦除语法
 - `minAppVersion 1.11.4`（SecretStorage 硬要求）；`isDesktopOnly: true`
-- 长连接用 `@larksuiteoapi/node-sdk` WSClient（唯一 SDK 依赖面）；发消息/表情/下载用自封装 REST（`feishu/client.ts`），便于在 Electron 下排查
-- 事件 handler 3 秒内返回且不抛异常；重活异步化；按 message_id 去重（飞书事件可能重复推送）
-- 写入只追加、统一走原子读-改-写；frontmatter 仅创建时写；附件永不删
+- 长连接用 `@larksuiteoapi/node-sdk` WSClient（唯一 SDK 依赖面），HTTP 层注入 obsidian requestUrl 实现（Electron CORS，见 AGENTS 硬知识 9）；发消息/表情/下载用自封装 REST（`feishu/http.ts` 统一出站）
+- 事件 handler 3 秒内返回且不抛异常；重活异步化；按 message_id 去重（飞书事件可能重复推送，实测证实）
+- 写入只追加、统一走原子读-改-写；frontmatter 仅创建时写；附件永不删；删除走 FileManager.trashFile（尊重用户删除偏好）
+- **产物体积策略**：不 minify（审核要求可审查）+ `mainFields: [module, main]` 强制 SDK ESM 入口做 tree-shaking（6.1MB → ~1MB）；产物必须 <5MB（Obsidian Sync Standard 单文件上限）
+- **版本联动**：`npm run release` 单一入口（三处版本 + tag），CI 校验 tag == manifest == package
 
-## Phase 0 待实测（结论回填处）
+## Phase 0 实测结论（2026-09-01/02，明细见 scripts/p0/README.md）
 
-| #   | 问题                                               | 状态                     |
-| --- | -------------------------------------------------- | ------------------------ |
-| 1   | 断线期间事件是否补推（决定要不要历史消息补拉模块） | ⏳ 待跑 `npm run p0`     |
-| 2   | ASR 免费版可用性                                   | ⏳ 待跑 `npm run p0:asr` |
-| 3   | SDK 在 Obsidian Electron 内兼容性                  | ⏳ 插件装好后验证        |
-| 4   | 个人版账号建应用                                   | ⏳ 用户走一遍接入流程    |
-| 5   | Obsidian 播放 .opus                                | ⏳ Phase 2               |
+| #   | 问题                                  | 结论                                                    |
+| --- | ------------------------------------- | ------------------------------------------------------- |
+| 1   | 断线期间事件是否补推                  | ⏳ 待实验（唯一剩余）                                    |
+| 2   | ASR 免费版可用性                      | ✅ 不可用（99991400，配额为零），转写开关默认关          |
+| 3   | SDK 在 Obsidian Electron 内兼容性     | ✅ HTTP 层 CORS 拦截，requestUrl 注入 httpInstance 解决  |
+| 4   | 个人版账号建应用                      | ✅ 个人免费团队可扫码创建                               |
+| 5   | Obsidian 播放 .opus                   | ⏳ 语音入库后点播验证                                   |
+| 6   | 3 秒时限                              | ✅ handler 轻活、重活异步                              |
+| 7   | 扫码创建的应用默认订阅方式            | ✅ 默认即长连接（见 D8）                                |
+| 8   | 全链路真机                            | ✅ 2026-09-01 通过（收发/表情/扫码/附件）              |

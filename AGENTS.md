@@ -7,11 +7,13 @@
 ## 常用命令
 
 ```sh
-npm run build      # tsc --noEmit + esbuild 产出 main.js（production minify）
+npm run build      # tsc --noEmit + esbuild 产出 main.js（不 minify，tree-shake 后约 1MB）
 npm run test       # node --test（Node 26 原生 type-stripping，零测试框架）
 npm run lint       # oxlint
 npm run fmt        # oxfmt（会重排文件——编辑前重读文件，避免 Edit 冲突）
 npm run dev        # esbuild watch
+npm run release    # 发版唯一入口：同步 package/manifest/versions 三处版本 + commit + tag
+                   # 用法 npm run release [patch|minor|major|x.y.z] [--push]
 ```
 
 P0 通道脚本（凭据在 `scripts/p0/.env`，不入库）见 [scripts/p0/README.md](scripts/p0/README.md)：`p0:init`（扫码建应用）/ `p0`（收发验证）/ `p0:debug`（看服务端推帧）/ `p0:diag`（一键分诊）/ `p0:asr`。
@@ -25,14 +27,16 @@ src/
 ├── feishu/            # 通道层
 │   ├── channel.ts     #   WSClient 包装 + normalizeIncoming（★ 事件规范化，有单测固化结构）
 │   ├── client.ts      #   REST 封装（token 自管理、发消息、表情、下载）
-│   ├── register.ts    #   扫码一键建应用（registerApp + addons 权限/事件预填）
-│   └── vault-adapter.ts # Obsidian Vault → VaultLike 原子写适配
+│   ├── http.ts        #   ★ 唯一 HTTP 出站层（obsidian requestUrl）+ SDK HttpInstance 实现
+│   ├── register.ts    #   扫码一键建应用（设备流 requestUrl 自实现 + addons 预填）
+│   └── vault-adapter.ts # Obsidian Vault → VaultLike 原子写适配（trash 走 FileManager）
 ├── core/              # 业务层（纯逻辑，可单测）
 │   ├── intents.ts     #   意图识别（精确匹配 + 长度闸门 + 「记：」逃生口）
 │   ├── writer.ts      #   DiaryWriter：追加/封存/撤回的纯字符串变换 + VaultLike
-│   └── contract.ts    #   数据契约常量（布局见 DECISIONS D2）
+│   ├── attachments.ts #   附件路径与笔记块构造
+│   └── reminder.ts    #   每日提醒决策纯函数
 ├── ui/                # 设置页 + 扫码创建 Modal（qrcode 渲染）
-└── util/              # time（唯一时间入口）/ dedupe（message_id LRU）
+└── util/              # time（唯一时间入口）/ dedupe（message_id LRU）/ filename（消毒）
 ```
 
 分层原则：`core/` 不依赖 obsidian 与 SDK；`feishu/` 只管通道；业务编排在 `main.ts`。
@@ -71,6 +75,17 @@ sender, message}`——**`data.message` 直接取，没有 `data.event` 包装**
    `httpInstance`，用 obsidian `requestUrl`（主进程网络栈）实现并注入即可；
    插件所有 HTTP 出站统一走 `feishu/http.ts` 的 requestUrl 封装。WebSocket
    本身不受 CORS（ws 库直连）。**禁止在插件运行时代码里用 fetch/axios 访问飞书域**。
+10. **SDK 体积与 tree-shaking**：SDK 的 CJS（`lib/`）与 ESM（`es/`）都是单文件
+    barrel（6MB+），但 ESM 版 esbuild 可以做级联死代码删除——esbuild 配置
+    `mainFields: ["module", "main"]` 强制走 ESM 入口后，main.js 从 6.1MB 降到
+    约 1MB（不 minify、可审查）。产物超 5MB 会导致 Obsidian Sync Standard
+    用户无法同步。**改 SDK 相关 import 后务必检查产物体积**（tree-shaking
+    依赖引用链，新增引用可能把大块代码拉回来）。
+11. **社区审核自动审查的坑**：`display()` 已 deprecated（声明式设置 API
+    `getSettingDefinitions()` 是方向，1.13.0+ 支持设置搜索——未迁移会 Warning
+    不阻塞）；`Vault.trash` 要换 `FileManager.trashFile`；定时器用
+    `window.setTimeout`（popout 兼容）；标题用 `new Setting().setHeading()`；
+    打包依赖内部代码（如 qrcode 的 createElement）触发的告警是误报，可注明不改。
 
 ## 代码约定（工具链强制的）
 
@@ -83,19 +98,19 @@ sender, message}`——**`data.message` 直接取，没有 `data.event` 包装**
 - `exactOptionalPropertyTypes: true`：可选属性不能显式赋 `undefined`。
 - 全项目时间走 `util/time.ts`（硬编码 Asia/Shanghai），禁止散落 `new Date()`
   取字段。写入只追加、统一 `vault.process` 原子读改写（见 contract.ts 头注释）。
+- **版本号单一入口**：`npm run release`（手改 package/manifest/versions 或手打
+  tag 都会漂移——CI 校验 tag == manifest == package，不一致构建失败）。
 - 注释密度低、只写代码本身说不清的约束；中文注释与文案。
 
-## 当前状态（2026-09-01）
+## 当前状态（2026-09-02）
 
-Phase 1（消息管线）+ Phase 2（媒体入库）+ Phase 3 核心（每日提醒）代码完成，
-51 单测全绿。**真机验证通过**（插件装入 Obsidian：长连接收发/表情回执/扫码
-创建/附件下载全链路正常）。P0 除断线补推实验外全部关闭：ASR 免费版不可用
-（转写开关默认关）、Electron 兼容性靠 requestUrl 注入解决。
+Phase 1-3 代码完成（51 单测全绿），真机验证通过，已提交 community.obsidian.md
+审核（2026-09-01）。体积优化：tree-shaking 后 main.js 1.0MB（过 Sync 5MB 线），
+release 带 artifact attestation。社区自动审查的 Error 与主要 Warning 已修
+（0.2.1），版本联动机制上线（npm run release）。
 
 待验证：P0-1 断线补推实验（决定要不要历史消息补拉模块）。
 
-待开发：P0-1 结论若需补拉则加历史消息模块；发布准备已就绪（README 英文版
-
-- 网络披露 + release workflow + 不 minify），剩 push GitHub → 打 tag →
-  community.obsidian.md 提交；Phase 4（语音气泡样式、撤回事件同步
-  im.message.recalled_v1、富文本消息、ASR 自配 OpenAI 兼容开关）。
+待开发：审核反馈跟进（getSettingDefinitions 声明式设置迁移——1.13.0+ 设置
+搜索，非阻塞）；P0-1 结论若需补拉则加历史消息模块；Phase 4（语音气泡样式、
+撤回事件同步 im.message.recalled_v1、富文本消息、ASR 自配 OpenAI 兼容开关）。
