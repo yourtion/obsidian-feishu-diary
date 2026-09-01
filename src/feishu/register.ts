@@ -24,7 +24,7 @@ export const REQUIRED_SCOPES = [
   "im:message.p2p_msg:readonly",
   "im:message:send_as_bot",
   "im:resource",
-  "im:message.reactions:send",
+  "im:message.reactions:write_only",
   "speech_to_text:speech",
   // 允许应用修改自身开发配置（事件订阅方式切 websocket、订阅事件）
   "application:application:patch",

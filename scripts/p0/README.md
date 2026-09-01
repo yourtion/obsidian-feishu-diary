@@ -19,7 +19,7 @@ const result = await Lark.registerApp({
         "im:message.p2p_msg:readonly",
         "im:message:send_as_bot",
         "im:resource",
-        "im:message.reactions:send",
+        "im:message.reactions:write_only",
         "speech_to_text:speech",
       ],
       user: [],
@@ -48,7 +48,7 @@ console.log(result.client_id, result.client_secret);
          "im:message.p2p_msg:readonly",
          "im:message:send_as_bot",
          "im:resource",
-         "im:message.reactions:send",
+         "im:message.reactions:write_only",
          "speech_to_text:speech"
        ],
        "user": []
