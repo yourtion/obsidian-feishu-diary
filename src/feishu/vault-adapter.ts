@@ -6,6 +6,7 @@
  */
 import { normalizePath, TFile, type Vault } from "obsidian";
 import type { VaultLike } from "../core/writer.ts";
+import { randomSuffix } from "../util/filename.ts";
 
 export class ObsidianVaultAdapter implements VaultLike {
   constructor(private readonly vault: Vault) {}
@@ -42,5 +43,25 @@ export class ObsidianVaultAdapter implements VaultLike {
     if (file instanceof TFile) {
       await this.vault.trash(file, true);
     }
+  }
+
+  /**
+   * 写入二进制附件；同名冲突时插入 4 位随机后缀消解（同分钟两条同名图片）。
+   * 返回实际落盘的文件名（wikilink 用）。
+   */
+  async writeBinary(path: string, data: ArrayBuffer): Promise<string> {
+    const normalized = normalizePath(path);
+    let target = normalized;
+    if (this.vault.getAbstractFileByPath(target)) {
+      const dot = normalized.lastIndexOf(".");
+      const suffix = `-${randomSuffix()}`;
+      target =
+        dot > normalized.lastIndexOf("/")
+          ? normalizePath(`${normalized.slice(0, dot)}${suffix}${normalized.slice(dot)}`)
+          : normalizePath(`${normalized}${suffix}`);
+    }
+    await this.ensureFolders(target);
+    await this.vault.createBinary(target, data);
+    return target.slice(target.lastIndexOf("/") + 1);
   }
 }

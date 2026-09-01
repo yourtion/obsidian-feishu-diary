@@ -11,6 +11,9 @@ import { EMOJI_DONE, EMOJI_DOING, FeishuClient } from "./feishu/client.ts";
 import { ObsidianVaultAdapter } from "./feishu/vault-adapter.ts";
 import { classify } from "./core/intents.ts";
 import { DiaryWriter } from "./core/writer.ts";
+import { attachmentBlock, attachmentPath } from "./core/attachments.ts";
+import type { MediaKind } from "./core/attachments.ts";
+import { extFromContentType } from "./util/filename.ts";
 import { MessageDeduper } from "./util/dedupe.ts";
 import { DEFAULT_SETTINGS, SECRET_ID } from "./settings.ts";
 import type { FeishuDiarySettings } from "./settings.ts";
@@ -26,17 +29,21 @@ const HELP_TEXT = [
   "· 「叫我XX」给我一个称呼",
 ].join("\n");
 
+const MEDIA_KINDS = ["image", "file", "audio", "media"];
+
 export default class FeishuDiaryPlugin extends Plugin {
   override settings: FeishuDiarySettings = DEFAULT_SETTINGS;
   private channel: FeishuChannel | null = null;
   private client: FeishuClient | null = null;
   private writer: DiaryWriter | null = null;
+  private vaultAdapter: ObsidianVaultAdapter | null = null;
   private readonly deduper = new MessageDeduper();
   private statusBarItem: HTMLElement | null = null;
 
   override async onload(): Promise<void> {
     await this.loadSettings();
-    this.writer = new DiaryWriter(new ObsidianVaultAdapter(this.app.vault), this.settings.rootDir);
+    this.vaultAdapter = new ObsidianVaultAdapter(this.app.vault);
+    this.writer = new DiaryWriter(this.vaultAdapter, this.settings.rootDir);
     this.addSettingTab(new FeishuDiarySettingTab(this.app, this));
     this.statusBarItem = this.addStatusBarItem();
     this.register(() => void this.stopChannel());
@@ -136,10 +143,14 @@ export default class FeishuDiaryPlugin extends Plugin {
 
   private async dispatchIntent(msg: IncomingMessage): Promise<void> {
     if (msg.messageType !== "text") {
-      await this.reply(
-        msg.senderOpenId,
-        "这类消息我还没学会（下个版本支持图片/文件/语音）。先发文字吧。",
-      );
+      if (MEDIA_KINDS.includes(msg.messageType)) {
+        await this.withReceipt(msg, () => this.handleMedia(msg));
+      } else {
+        await this.reply(
+          msg.senderOpenId,
+          "这类消息我还没学会。支持：文字、图片、文件、语音、视频。",
+        );
+      }
       return;
     }
 
@@ -184,6 +195,37 @@ export default class FeishuDiaryPlugin extends Plugin {
         await this.reply(msg.senderOpenId, `好的，以后叫你「${intent.name}」。`);
         return;
     }
+  }
+
+  /**
+   * 媒体消息入库：下载资源 → 存 attachments/ → 笔记写块。
+   * 失败（超 100MB、资源过期等）由 withReceipt 捕获并文字回执。
+   */
+  private async handleMedia(msg: IncomingMessage): Promise<void> {
+    const { client, vaultAdapter, writer } = this;
+    if (!client || !vaultAdapter || !writer) throw new Error("插件未完成初始化，请重载");
+
+    const kind = msg.messageType as MediaKind;
+    const content = JSON.parse(msg.content || "{}") as Record<string, unknown>;
+
+    // image 消息只有 image_key；audio/file/media 用 file_key（media 的封面图略过）。
+    const fileKey =
+      kind === "image" ? String(content.image_key ?? "") : String(content.file_key ?? "");
+    if (!fileKey) throw new Error(`消息缺 file_key（${kind}）`);
+
+    const displayName =
+      kind === "image" ? "image" : kind === "audio" ? "voice" : String(content.file_name ?? "file");
+
+    const { buffer, contentType } = await client.downloadResource(
+      msg.messageId,
+      fileKey,
+      kind === "image" ? "image" : "file",
+    );
+    // 语音恒为 Ogg/Opus；file/media 文件名自带扩展名；图片从 Content-Type 推断。
+    const ext = kind === "audio" ? ".opus" : extFromContentType(contentType);
+    const path = attachmentPath(this.settings.rootDir, msg.createTimeMs, displayName, ext);
+    const savedName = await vaultAdapter.writeBinary(path, buffer);
+    await writer.append(msg.createTimeMs, attachmentBlock(kind, savedName));
   }
 
   /** 表情两态回执：doing → 工作 → done。表情失败不阻塞主流程。 */

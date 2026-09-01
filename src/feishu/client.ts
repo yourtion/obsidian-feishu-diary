@@ -104,12 +104,12 @@ export class FeishuClient {
     });
   }
 
-  /** 下载消息资源（image 用 type=image，其余用 file），返回二进制。 */
+  /** 下载消息资源（image 用 type=image，其余用 file），返回二进制与 Content-Type。 */
   async downloadResource(
     messageId: string,
     fileKey: string,
     type: "image" | "file",
-  ): Promise<ArrayBuffer> {
+  ): Promise<{ buffer: ArrayBuffer; contentType: string | null }> {
     const token = await this.tenantAccessToken();
     const res = await fetch(
       `${FEISHU_BASE}/open-apis/im/v1/messages/${messageId}/resources/${fileKey}?type=${type}`,
@@ -121,7 +121,7 @@ export class FeishuClient {
       const body = (await res.json().catch(() => ({}))) as { code?: number; msg?: string };
       throw new FeishuApiError(res.status, body.code ?? -1, body.msg ?? "download failed");
     }
-    return res.arrayBuffer();
+    return { buffer: await res.arrayBuffer(), contentType: res.headers.get("content-type") };
   }
 }
 
