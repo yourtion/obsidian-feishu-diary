@@ -109,6 +109,15 @@ sender, message}`——**`data.message` 直接取，没有 `data.event` 包装**
     不阻塞）；`Vault.trash` 要换 `FileManager.trashFile`；定时器用
     `window.setTimeout`（popout 兼容）；标题用 `new Setting().setHeading()`；
     打包依赖内部代码（如 qrcode 的 createElement）触发的告警是误报，可注明不改。
+12. **审核机器人不读仓库的 eslint 豁免，也不读 pnpm-lock.yaml**：自动审查用
+    自己的规则集扫全 repo 源码——`src/cli.ts`/`src/node/`（CLI 运行时，不进
+    main.js 产物）会被报 fs 直访/fetch/console/no-unsafe-*；`register.ts` 的
+    node:zlib 因其环境缺 @types/node 也误报 unsafe（本地 lint:obsidian 干净
+    可证）。这些 Warning 在审核 PR 注明即可，Error 才阻塞。真坑是**构建校验**：
+    机器人按 npm 语义装依赖（无 lock 可读），`^` 范围解析到新 esbuild（0.25→
+    0.28）就触发 "Build output does not match the released main.js"——进
+    bundle 的依赖（esbuild / @larksuiteoapi/node-sdk / qrcode）必须锁精确
+    版本（2026-09-02 已锁，验证过 main.js 逐字节不变）。
 
 ## 代码约定（工具链强制的）
 
@@ -123,6 +132,8 @@ sender, message}`——**`data.message` 直接取，没有 `data.event` 包装**
   取字段。写入只追加、统一 `vault.process` 原子读改写（见 contract.ts 头注释）。
 - **版本号单一入口**：`npm run release`（手改 package/manifest/versions 或手打
   tag 都会漂移——CI 校验 tag == manifest == package，不一致构建失败）。
+- **进 bundle 的依赖锁精确版本**（不带 `^`，现有 esbuild / SDK / qrcode）：
+  审核机器人 npm 语义安装不读 pnpm-lock，`^` 漂移触发构建产物不匹配（见硬知识 12）。
 - 注释密度低、只写代码本身说不清的约束；中文注释与文案。
 
 ## 当前状态（2026-09-02）
