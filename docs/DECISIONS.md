@@ -60,6 +60,7 @@ Ogg/Opus 直存（Obsidian 可直接播）；飞书官方 ASR 是设置开关而
 - **集群约束对 CLI 同样适用**：同一 appId 的插件与 CLI 勿同时在线（事件随机分推）。
 - lint 适配：`eslint.config.mjs` 对 `src/cli.ts`+`src/node/**` 关 no-console/no-restricted-globals（CLI 运行时 stdout 是本职、Node 下 fetch 无 CORS）；对 `src/service.ts` 关 obsidianmd/no-global-this（双运行时共用模块的刻意 Node 兼容分支）；oxlint `ignorePatterns` 排除 bundle 产物。
 - v1 不含 `init` 扫码子命令（`p0:init` 已覆盖），后续可加。
+- ✅ 发布闭环（2026-09-02）：npm 首发手动完成（0.2.3 含 CLI 代码），`release.yml` 已整合 npm publish——tag push → GitHub release（插件资产 + attest）→ npm publish（`--provenance`，需 NPM_TOKEN secret + repository 字段 + registry-url + id-token: write），两步均幂等可重跑。此后插件与 npm 版本由同一 tag 强制对齐，`pnpm run release --push` 单一入口不变。
 
 ## 技术栈与架构约定
 

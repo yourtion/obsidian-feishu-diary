@@ -21,6 +21,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          # npm publish 的 NODE_AUTH_TOKEN 认证与 --provenance 均要求 registry-url
+          registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
       - run: pnpm run lint:obsidian
@@ -41,4 +43,23 @@ jobs:
           if [ "$(jq -r .version manifest.json)" != "$tag" ] || [ "$(jq -r .version package.json)" != "$tag" ]; then
             echo "tag $tag does not match manifest.json/package.json version" && exit 1
           fi
-          gh release create "$tag" --title "$tag" --generate-notes main.js manifest.json styles.css
+          # 幂等：workflow 部分失败重跑时不因 release 已存在而挂
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag already exists, skip create"
+          else
+            gh release create "$tag" --title "$tag" --generate-notes main.js manifest.json styles.css
+          fi
+      # npm 与插件同版本号发布（CI 已校验 tag == package.version）。
+      # prepublishOnly 会再跑一遍 build+test 作发布前最终把关。
+      # --provenance 依赖 setup-node 的 registry-url、id-token: write 与
+      # package.json 的 repository 字段。
+      - name: Publish CLI to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          if [ "$(npm view feishu-diary@"$tag" version 2>/dev/null)" = "$tag" ]; then
+            echo "feishu-diary@$tag already on npm, skip publish"
+            exit 0
+          fi
+          npm publish --provenance

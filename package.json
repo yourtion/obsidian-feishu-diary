@@ -11,6 +11,10 @@
     "obsidian-plugin"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourtion/obsidian-feishu-diary.git"
+  },
   "bin": {
     "feishu-diary": "dist/cli.cjs"
   },

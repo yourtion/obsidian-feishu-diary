@@ -15,7 +15,7 @@ pnpm run fmt        # oxfmt（会重排文件——编辑前重读文件，避�
 pnpm run dev        # esbuild watch
 pnpm run release    # 发版唯一入口：同步 package/manifest/versions 三处版本 + commit + tag
                      # 用法 pnpm run release [patch|minor|major|x.y.z] [--push]
-npm publish         # CLI 发 npm（与插件同版本号；prepublishOnly 自动 build+test）
+                     # tag push 后 CI 同时发 GitHub release（插件）与 npm（CLI，--provenance）
 ```
 
 包管理器为 **pnpm 11**（锁文件 pnpm-lock.yaml；CI 用 pnpm/action-setup@v4）。
@@ -135,9 +135,11 @@ release 带 artifact attestation。社区自动审查的 Error 与主要 Warning
 **CLI 版（2026-09-02）**：编排抽成 `service.ts`（环境无关），npm 包 `feishu-diary`
 （`npx feishu-diary`，Node ≥18，产物 dist/cli.cjs 0.89MB 单文件零依赖）。真机
 验证：--env-file 凭据加载、认主预填、WS 连接 connecting→online（fetch 版
-HttpInstance）、SIGINT 优雅退出均通过。**尚未 npm publish**（包名已确认未被
-占用，首版手动 `npm publish`，跑通后再进 CI）；完整收发管线与插件共用 service
-（测试保护），CLI 侧专项测试覆盖 fs 存储与配置解析。决策记录见 D9。
+HttpInstance）、SIGINT 优雅退出均通过。npm 首发已手动完成（0.2.3/0.2.4），
+**release.yml 已整合 npm publish**（tag → GitHub release + npm 一条链，幂等可
+重跑，--provenance 需要 repo secrets 的 NPM_TOKEN 与 package.json 的 repository
+字段）；完整收发管线与插件共用 service（测试保护），CLI 侧专项测试覆盖 fs
+存储与配置解析。决策记录见 D9。
 
 待验证：P0-1 断线补推实验（决定要不要历史消息补拉模块）。
 
