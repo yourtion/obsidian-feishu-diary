@@ -135,11 +135,14 @@ release 带 artifact attestation。社区自动审查的 Error 与主要 Warning
 **CLI 版（2026-09-02）**：编排抽成 `service.ts`（环境无关），npm 包 `feishu-diary`
 （`npx feishu-diary`，Node ≥18，产物 dist/cli.cjs 0.89MB 单文件零依赖）。真机
 验证：--env-file 凭据加载、认主预填、WS 连接 connecting→online（fetch 版
-HttpInstance）、SIGINT 优雅退出均通过。npm 首发已手动完成（0.2.3/0.2.4），
+HttpInstance）、SIGINT 优雅退出均通过。npm 首发已手动完成（0.2.3），
 **release.yml 已整合 npm publish**（tag → GitHub release + npm 一条链，幂等可
-重跑，--provenance 需要 repo secrets 的 NPM_TOKEN 与 package.json 的 repository
-字段）；完整收发管线与插件共用 service（测试保护），CLI 侧专项测试覆盖 fs
-存储与配置解析。决策记录见 D9。
+重跑）。npm 认证走 **Trusted Publishers（OIDC）**：无需 NPM_TOKEN，但要求
+Node ≥22.14 + npm ≥11.5.1（CI 用 Node 24）、id-token: write、package.json 的
+repository 字段；npmjs.com 后台绑定须与 workflow 完全一致（repo +
+release.yml + 无 environment，大小写敏感），provenance 自动生成。完整收发
+管线与插件共用 service（测试保护），CLI 侧专项测试覆盖 fs 存储与配置解析。
+决策记录见 D9。
 
 待验证：P0-1 断线补推实验（决定要不要历史消息补拉模块）。
 
