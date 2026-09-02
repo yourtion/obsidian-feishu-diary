@@ -33,7 +33,7 @@ export class ScanSetupModal extends Modal {
     this.contentEl.empty();
     this.contentEl.addClass("feishu-diary-scan-modal");
 
-    const qrEl = this.contentEl.createEl("div", { cls: "feishu-diary-qr" });
+    const qrEl = this.contentEl.createDiv({ cls: "feishu-diary-qr" });
     this.statusEl = this.contentEl.createEl("p", {
       cls: "feishu-diary-scan-status",
       text: "正在获取验证链接…",
@@ -77,7 +77,7 @@ export class ScanSetupModal extends Modal {
       const openId = result.user_info?.open_id;
       if (openId) scanResult.openId = openId;
       await this.onDone(scanResult);
-      new Notice("Feishu Diary：应用已创建并连接");
+      new Notice("Feishu diary：应用已创建并连接");
       this.close();
     } catch (err) {
       if (this.abort.signal.aborted) return;

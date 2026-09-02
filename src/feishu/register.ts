@@ -45,11 +45,10 @@ export interface ScanCallbacks {
 
 /** 与 SDK encodeAddons 同款：base64url(gzip(json))。 */
 function encodeAddons(payload: object): string {
-  return gzipSync(Buffer.from(JSON.stringify(payload), "utf8"))
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  const json: string = JSON.stringify(payload);
+  const gz: Buffer = gzipSync(Buffer.from(json, "utf8"));
+  const b64: string = gz.toString("base64");
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 interface BeginResponse {

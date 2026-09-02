@@ -216,12 +216,19 @@ export default class FeishuDiaryPlugin extends Plugin {
     const content = JSON.parse(msg.content || "{}") as Record<string, unknown>;
 
     // image 消息只有 image_key；audio/file/media 用 file_key（media 的封面图略过）。
-    const fileKey =
-      kind === "image" ? String(content.image_key ?? "") : String(content.file_key ?? "");
+    const rawKey = kind === "image" ? content.image_key : content.file_key;
+    const fileKey = typeof rawKey === "string" ? rawKey : "";
     if (!fileKey) throw new Error(`消息缺 file_key（${kind}）`);
 
+    const rawName = content.file_name;
     const displayName =
-      kind === "image" ? "image" : kind === "audio" ? "voice" : String(content.file_name ?? "file");
+      kind === "image"
+        ? "image"
+        : kind === "audio"
+          ? "voice"
+          : typeof rawName === "string" && rawName
+            ? rawName
+            : "file";
 
     const { buffer, contentType } = await client.downloadResource(
       msg.messageId,

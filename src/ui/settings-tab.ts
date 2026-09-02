@@ -59,7 +59,7 @@ export class FeishuDiarySettingTab extends PluginSettingTab {
                   if (trimmed.length === 0) return;
                   await this.plugin.storeAppSecret(trimmed);
                   text.setValue("");
-                  new Notice("App Secret 已保存，正在重连");
+                  new Notice("App secret 已保存，正在重连");
                   await this.plugin.restartChannel();
                   this.update();
                 });
@@ -69,9 +69,11 @@ export class FeishuDiarySettingTab extends PluginSettingTab {
           {
             name: "重新连接",
             desc: "凭据或订阅方式变更后，重启长连接",
-            action: async () => {
-              await this.plugin.restartChannel();
-              new Notice("已触发重连");
+            action: () => {
+              void (async () => {
+                await this.plugin.restartChannel();
+                new Notice("已触发重连");
+              })();
             },
           },
         ],
@@ -107,11 +109,13 @@ export class FeishuDiarySettingTab extends PluginSettingTab {
         ? {
             name: "认主",
             desc: `当前主人：${owner}`,
-            action: async () => {
-              this.plugin.settings.ownerOpenId = null;
-              await this.plugin.saveSettings();
-              new Notice("已解绑，下一条消息的发送者将成为新主人");
-              this.update();
+            action: () => {
+              void (async () => {
+                this.plugin.settings.ownerOpenId = null;
+                await this.plugin.saveSettings();
+                new Notice("已解绑，下一条消息的发送者将成为新主人");
+                this.update();
+              })();
             },
           }
         : {

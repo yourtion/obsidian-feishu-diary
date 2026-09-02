@@ -9,7 +9,8 @@
 ```sh
 pnpm run build      # tsc --noEmit + esbuild 产出 main.js（不 minify，tree-shake 后约 1MB）
 pnpm run test       # node --test（Node 26 原生 type-stripping，零测试框架）
-pnpm run lint       # oxlint
+pnpm run lint       # oxlint（快速语法层）
+pnpm run lint:obsidian  # eslint + eslint-plugin-obsidianmd——社区自动审查同款规则，提交前必须清零
 pnpm run fmt        # oxfmt（会重排文件——编辑前重读文件，避免 Edit 冲突）
 pnpm run dev        # esbuild watch
 pnpm run release    # 发版唯一入口：同步 package/manifest/versions 三处版本 + commit + tag
