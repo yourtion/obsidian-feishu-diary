@@ -40,13 +40,13 @@
     "p0:asr": "node --env-file=scripts/p0/.env scripts/p0/asr-probe.ts"
   },
   "dependencies": {
-    "@larksuiteoapi/node-sdk": "^1.73.1",
-    "qrcode": "^1.5.4"
+    "@larksuiteoapi/node-sdk": "1.73.1",
+    "qrcode": "1.5.4"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
     "@types/qrcode": "^1.5.6",
-    "esbuild": "^0.25.0",
+    "esbuild": "0.25.12",
     "eslint": "^10.9.1",
     "eslint-plugin-obsidianmd": "^0.4.2",
     "obsidian": "^1.11.4",
