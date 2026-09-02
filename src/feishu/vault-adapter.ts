@@ -5,10 +5,10 @@
  * 路径逐级建目录（Obsidian createFolder 不递归）。
  */
 import { normalizePath, TFile, type FileManager, type Vault } from "obsidian";
-import type { VaultLike } from "../core/writer.ts";
+import type { StorageAdapter } from "../core/writer.ts";
 import { randomSuffix } from "../util/filename.ts";
 
-export class ObsidianVaultAdapter implements VaultLike {
+export class ObsidianVaultAdapter implements StorageAdapter {
   private readonly vault: Vault;
   private readonly fileManager: FileManager;
 
@@ -50,6 +50,10 @@ export class ObsidianVaultAdapter implements VaultLike {
       // trashFile 尊重用户的删除偏好（系统废纸篓 / .trash 目录）。
       await this.fileManager.trashFile(file);
     }
+  }
+
+  async exists(path: string): Promise<boolean> {
+    return this.vault.getAbstractFileByPath(normalizePath(path)) instanceof TFile;
   }
 
   /**

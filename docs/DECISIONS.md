@@ -47,16 +47,31 @@ Ogg/Opus 直存（Obsidian 可直接播）；飞书官方 ASR 是设置开关而
 - ✅ 实测（2026-09-01）：飞书确实会重复推送事件（同一 message_id 收到两遍，并发消息时触发）——message_id 去重是硬需求，p0 脚本与插件均已实现
 - 兜底：p0:diag 第 [4] 步会 PATCH application/v7/config 幂等自愈（需 application:application:patch 权限，已加入 init 与插件的 addons）
 
+## D9 · CLI 版：单包双产物，编排抽成环境无关 service（2026-09-02 补）
+
+无 Obsidian 场景（家用服务器/NAS/树莓派）经 npm 包 `feishu-diary` 直接 `npx feishu-diary` 启动。关键拍板：
+
+- **单包双产物，不做 monorepo**：同一 package.json 既是插件（GitHub release 装 main.js）又是 npm 包（files 只含 dist/，bin 指 dist/cli.cjs）。版本天然同步，release 脚本/CI 校验零改动；workspace 化要大改发版链路，收益只有「两个包名」，不值。
+- **npm 包名 = 插件 id = `feishu-diary`**（D4 的扩展）：npx 按包名找包，短名命令体验优先。插件市场看 manifest id，不受 package name 影响。
+- **编排抽 `src/service.ts`（零 obsidian import）**：消息管线/提醒/回执全部搬入，`main.ts`（插件壳）与 `cli.ts`（CLI 壳）只做装配。注入面收敛为四个：HttpApi（requestUrl/fetch 二选一）、SDK HttpInstance、StorageAdapter（Vault/fs 二选一）、persist 回调。
+- **CLI 产物 format 用 cjs 不用 esm**：SDK 的 axios 依赖链含 CJS require，esm 输出下 esbuild 的 `__require` shim 运行时抛 `Dynamic require of "util"`。cjs 与 main.js 同管线（已验证）。
+- **配置优先级 args > env > 默认；状态文件只存运行时习得**（认主/称呼/提醒状态机，`<dir>/.feishu-diary-state.json`，点开头 Obsidian 不索引）——用户显式配置不落盘，每次启动重解析。
+- **CLI 的 trash 移 `<dir>/.trash/`** 而非系统废纸篓：零依赖、跨平台、可恢复；NodeFsVaultAdapter 的原子性为单进程语义（tmp+rename），与「同一应用仅一客户端在线」约束一致。
+- **集群约束对 CLI 同样适用**：同一 appId 的插件与 CLI 勿同时在线（事件随机分推）。
+- lint 适配：`eslint.config.mjs` 对 `src/cli.ts`+`src/node/**` 关 no-console/no-restricted-globals（CLI 运行时 stdout 是本职、Node 下 fetch 无 CORS）；对 `src/service.ts` 关 obsidianmd/no-global-this（双运行时共用模块的刻意 Node 兼容分支）；oxlint `ignorePatterns` 排除 bundle 产物。
+- v1 不含 `init` 扫码子命令（`p0:init` 已覆盖），后续可加。
+
 ## 技术栈与架构约定
 
 - TS strict + oxlint + oxfmt + esbuild + node:test（Node 原生 type-stripping 跑测试，零测试框架依赖）
 - Node type-stripping 约束：不用 enum / constructor parameter properties 等不可擦除语法
 - `minAppVersion 1.11.4`（SecretStorage 硬要求）；`isDesktopOnly: true`
-- 长连接用 `@larksuiteoapi/node-sdk` WSClient（唯一 SDK 依赖面），HTTP 层注入 obsidian requestUrl 实现（Electron CORS，见 AGENTS 硬知识 9）；发消息/表情/下载用自封装 REST（`feishu/http.ts` 统一出站）
+- 长连接用 `@larksuiteoapi/node-sdk` WSClient（唯一 SDK 依赖面）；HTTP 出站统一 `HttpApi` 接口注入：Obsidian 下 requestUrl 实现（Electron CORS，见 AGENTS 硬知识 9），CLI 下 fetch 实现（`node/http.ts`）；发消息/表情/下载用自封装 REST（`FeishuClient`）
+- 编排在 `service.ts`（环境无关），`main.ts`/`cli.ts` 两个宿主壳装配；存储统一 `StorageAdapter` 接口（Obsidian Vault / Node fs 两个实现）
 - 事件 handler 3 秒内返回且不抛异常；重活异步化；按 message_id 去重（飞书事件可能重复推送，实测证实）
-- 写入只追加、统一走原子读-改-写；frontmatter 仅创建时写；附件永不删；删除走 FileManager.trashFile（尊重用户删除偏好）
-- **产物体积策略**：不 minify（审核要求可审查）+ `mainFields: [module, main]` 强制 SDK ESM 入口做 tree-shaking（6.1MB → ~1MB）；产物必须 <5MB（Obsidian Sync Standard 单文件上限）
-- **版本联动**：`npm run release` 单一入口（三处版本 + tag），CI 校验 tag == manifest == package
+- 写入只追加、统一走原子读-改-写；frontmatter 仅创建时写；附件永不删；插件内删除走 FileManager.trashFile（尊重用户删除偏好），CLI 内移 `<dir>/.trash/`
+- **产物体积策略**：不 minify（审核要求可审查）+ `mainFields: [module, main]` 强制 SDK ESM 入口做 tree-shaking（6.1MB → ~1MB）；产物必须 <5MB（Obsidian Sync Standard 单文件上限）。**改 SDK 相关 import 后务必检查两个产物体积**（main.js 与 dist/cli.cjs）
+- **版本联动**：`npm run release` 单一入口（三处版本 + tag），CI 校验 tag == manifest == package；npm 发布（手动 `npm publish`，prepublishOnly 自动 build+test）与插件发版共用同一版本号
 
 ## Phase 0 实测结论（2026-09-01/02，明细见 scripts/p0/README.md）
 

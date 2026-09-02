@@ -17,6 +17,29 @@ export interface HttpResponse {
   data: unknown;
 }
 
+/** 二进制下载响应（requestBinary 的返回形状）。 */
+export interface BinaryResponse {
+  status: number;
+  buffer: ArrayBuffer;
+  contentType: string | null;
+  text: string;
+}
+
+/**
+ * HTTP 出站 API——环境无关接口，由宿主装配层选择实现注入：
+ * Obsidian 走本文件的 requestUrl 实现，Node CLI 走 node/http.ts 的 fetch 实现。
+ * 类型引用（import type）零运行时成本，不会把 obsidian 拖进 CLI 产物。
+ */
+export interface HttpApi {
+  postForm(url: string, params: Record<string, string>): Promise<HttpResponse>;
+  requestJson(
+    method: "GET" | "POST" | "DELETE",
+    url: string,
+    opts?: { token?: string; body?: unknown },
+  ): Promise<HttpResponse>;
+  requestBinary(url: string, token: string): Promise<BinaryResponse>;
+}
+
 function parseBody(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -57,10 +80,7 @@ export async function requestJson(
 }
 
 /** 二进制下载（消息资源）。非 2xx 时 buffer 为空、text 携带错误响应。 */
-export async function requestBinary(
-  url: string,
-  token: string,
-): Promise<{ status: number; buffer: ArrayBuffer; contentType: string | null; text: string }> {
+export async function requestBinary(url: string, token: string): Promise<BinaryResponse> {
   const res = await requestUrl({
     url,
     method: "GET",
@@ -118,3 +138,6 @@ export function createObsidianHttpInstance(): HttpInstance {
     patch: withMethod("patch"),
   };
 }
+
+/** requestUrl 实现的 HttpApi（Obsidian 装配用）。 */
+export const obsidianHttp: HttpApi = { postForm, requestJson, requestBinary };

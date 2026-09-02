@@ -13,6 +13,18 @@ export interface VaultLike {
   trash(path: string): Promise<void>;
 }
 
+/**
+ * 宿主环境的完整存储适配（编排层 service 用）：VaultLike 之上补附件二进制写入
+ * 与存在性检查（提醒 tick 检查当天日记）。实现见 feishu/vault-adapter.ts 与
+ * node/vault.ts——core 只定义契约，不引入任何运行时。
+ */
+export interface StorageAdapter extends VaultLike {
+  /** 写入二进制附件；同名冲突时插入随机后缀消解，返回实际落盘文件名（basename）。 */
+  writeBinary(path: string, data: ArrayBuffer): Promise<string>;
+  /** 文件是否存在。 */
+  exists(path: string): Promise<boolean>;
+}
+
 const SEAL_MARK = "_(今日封存于";
 
 /** 把内容按空行切成块（frontmatter 内部无空行，天然是一整块）。 */

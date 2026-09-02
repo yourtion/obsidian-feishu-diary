@@ -4,6 +4,8 @@
 
 Talk to a Feishu bot, and it lands in your Obsidian vault as a diary. No server required — everything goes through Feishu's official open platform APIs (WebSocket long connection).
 
+Also available as a **standalone CLI** — `npx feishu-diary` writes the same diary into any local directory, no Obsidian needed (see [CLI usage](#cli-usage)).
+
 ## Features
 
 - **Scan to set up**: create your Feishu app by scanning a QR code in the plugin settings — permissions and event subscriptions are pre-configured automatically
@@ -32,13 +34,32 @@ Your App Secret is stored in Obsidian's SecretStorage, never in plugin data file
 3. Publish the app version in the Feishu developer console (the QR flow pre-fills everything; publishing takes two clicks)
 4. Find the bot in Feishu and start talking
 
+## CLI usage
+
+The same pipeline ships as an npm package (`feishu-diary`) for headless environments — a home server, a NAS, a Raspberry Pi, or simply anywhere without Obsidian:
+
+```sh
+npx feishu-diary --app-id cli_xxx --app-secret yyy --dir ~/diary
+# or via environment variables (a .env file works too, see --env-file)
+FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=yyy npx feishu-diary --dir ~/diary
+```
+
+Run `npx feishu-diary --help` for the full option list. Notes:
+
+- Files land in `<dir>/YYYY/YYYY-MM-DD.md` with the same data contract as the plugin (append-only, atomic writes, attachments under `<dir>/attachments/`)
+- Runtime state (owner binding, nickname, reminder state) lives in `<dir>/.feishu-diary-state.json` — back up the directory and you've backed up everything
+- Recalled entries move to `<dir>/.trash/` (recoverable) instead of the system trash
+- ⚠️ One app, one client: if the Obsidian plugin and the CLI connect with the same app credentials at the same time, Feishu delivers each event to a random one of them. Don't run both against the same app.
+
+Requires Node.js ≥ 18.
+
 ## Development
 
 ```sh
 pnpm install
 pnpm run lint && pnpm run fmt:check
 pnpm test
-pnpm run build   # produces main.js
+pnpm run build   # produces main.js (plugin) + dist/cli.cjs (npm CLI)
 pnpm run release # bump version (package/manifest/versions) + commit + tag, all in one
 ```
 
@@ -46,7 +67,7 @@ Channel verification and onboarding scripts live in [scripts/p0/README.md](scrip
 
 ## 中文说明
 
-对着飞书机器人说话，内容落进本地 Obsidian 库——不依赖服务器，全部走飞书官方开放 API（WebSocket 长连接）。
+对着飞书机器人说话，内容落进本地 Obsidian 库——不依赖服务器，全部走飞书官方开放 API（WebSocket 长连接）。也提供**独立 CLI 版**（`npx feishu-diary`），无需 Obsidian，可跑在任意有 Node 的机器上，写入任意本地目录。
 
 - **扫码即用**：设置页扫码一键创建飞书自建应用（自动配好权限与事件订阅），无需进开发者后台
 - **发什么记什么**：一次发送 = 一条日记，同分钟消息共享时间戳段头
@@ -55,6 +76,19 @@ Channel verification and onboarding scripts live in [scripts/p0/README.md](scrip
 - **自然语言命令**：撤回 / 结束 / 晚安 / 在吗 / 记：xxx / 帮助 / 叫我XX
 - **每日提醒**：当天没记才提醒（默认 21:30），连 3 天没记自动沉默，错过到点开机补发
 - **数据契约**：只追加、原子写、frontmatter 仅创建时写、附件永不删
+
+### CLI 用法
+
+```sh
+npx feishu-diary --app-id cli_xxx --app-secret yyy --dir ~/diary
+# 或走环境变量（支持 --env-file 加载 .env）
+FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=yyy npx feishu-diary --dir ~/diary
+```
+
+- 数据契约与插件完全一致；运行状态（认主/称呼/提醒）存 `<dir>/.feishu-diary-state.json`
+- 撤回的条目移入 `<dir>/.trash/`（可恢复），不走系统废纸篓
+- ⚠️ 同一应用凭据勿与 Obsidian 插件同时在线（飞书会把事件随机推给其中一个客户端）
+- 要求 Node.js ≥ 18，完整参数见 `npx feishu-diary --help`
 
 ## License
 

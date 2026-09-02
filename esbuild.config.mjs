@@ -1,4 +1,5 @@
 import esbuild from "esbuild";
+import { chmodSync } from "node:fs";
 import process from "node:process";
 
 const banner = `/*
@@ -9,7 +10,7 @@ if you want to view the source, please visit the github repository of this plugi
 
 const prod = process.argv[2] === "production";
 
-const context = await esbuild.context({
+const plugin = await esbuild.context({
   banner: { js: banner },
   entryPoints: ["src/main.ts"],
   bundle: true,
@@ -42,9 +43,33 @@ const context = await esbuild.context({
   platform: "node",
 });
 
+// CLI 产物：npx 直启的单文件 bundle（SDK/ws 全打入，零运行时依赖）。
+// 与插件产物隔离（dist/），npm 包 files 只含 dist——插件资产仍走 GitHub release。
+// format 用 cjs 而非 esm：SDK 的 axios 依赖链含 CJS require，原生 ESM 下
+// esbuild 的 __require shim 会抛 Dynamic require（与 main.js 同款管线最稳）。
+const cli = await esbuild.context({
+  // shebang 必须是文件首行。
+  banner: { js: `#!/usr/bin/env node\n${banner}` },
+  entryPoints: ["src/cli.ts"],
+  bundle: true,
+  format: "cjs",
+  platform: "node",
+  target: "node18",
+  logLevel: "info",
+  sourcemap: prod ? false : "inline",
+  treeShaking: true,
+  mainFields: ["module", "main"],
+  minify: false,
+  outfile: "dist/cli.cjs",
+});
+
 if (prod) {
-  await context.rebuild();
+  await plugin.rebuild();
+  await cli.rebuild();
+  // npm bin 需要执行位（esbuild 产物默认 644）。
+  chmodSync("dist/cli.cjs", 0o755);
   process.exit(0);
 } else {
-  await context.watch();
+  await plugin.watch();
+  await cli.watch();
 }

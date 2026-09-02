@@ -1,13 +1,12 @@
 /**
  * FeishuClient——飞书开放平台 REST 封装（tenant_access_token 自管理）。
  *
- * 出站统一走 obsidian requestUrl（见 http.ts）：Electron renderer 的 fetch/XHR
- * 受 CORS 约束（实测 accounts/open.feishu.cn 均不返回 CORS 头）。
- * 长连接（WSClient）由 SDK 承担，其 HTTP 层已注入同款 requestUrl 实现。
+ * HTTP 出站经 HttpApi 注入（接口见 http.ts）：Obsidian 下为 requestUrl 实现
+ * （Electron renderer 的 fetch/XHR 受 CORS 约束），Node CLI 下为 fetch 实现。
+ * 长连接（WSClient）由 SDK 承担，其 HTTP 层由装配层注入同款实现。
  */
 
-import { requestBinary, requestJson } from "./http.ts";
-import type { HttpResponse } from "./http.ts";
+import type { BinaryResponse, HttpApi, HttpResponse } from "./http.ts";
 
 export class FeishuApiError extends Error {
   constructor(
@@ -32,12 +31,17 @@ export interface FeishuCreds {
 
 export class FeishuClient {
   private tokenCache: TokenCache | null = null;
+  private readonly creds: FeishuCreds;
+  private readonly http: HttpApi;
 
-  constructor(private readonly creds: FeishuCreds) {}
+  constructor(creds: FeishuCreds, http: HttpApi) {
+    this.creds = creds;
+    this.http = http;
+  }
 
   private async tenantAccessToken(): Promise<string> {
     if (this.tokenCache && Date.now() < this.tokenCache.expireAt) return this.tokenCache.token;
-    const res = await requestJson(
+    const res = await this.http.requestJson(
       "POST",
       "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
       {
@@ -68,7 +72,10 @@ export class FeishuClient {
     body?: unknown,
   ): Promise<HttpResponse> {
     const token = await this.tenantAccessToken();
-    const res = await requestJson(method, `https://open.feishu.cn${path}`, { token, body });
+    const res = await this.http.requestJson(method, `https://open.feishu.cn${path}`, {
+      token,
+      body,
+    });
     const data = res.data as { code?: number; msg?: string };
     if (!judgeOk(res) || data.code !== 0) {
       throw new FeishuApiError(res.status, data.code ?? -1, data.msg ?? String(res.data));
@@ -107,7 +114,7 @@ export class FeishuClient {
     type: "image" | "file",
   ): Promise<{ buffer: ArrayBuffer; contentType: string | null }> {
     const token = await this.tenantAccessToken();
-    const res = await requestBinary(
+    const res: BinaryResponse = await this.http.requestBinary(
       `https://open.feishu.cn/open-apis/im/v1/messages/${messageId}/resources/${fileKey}?type=${type}`,
       token,
     );

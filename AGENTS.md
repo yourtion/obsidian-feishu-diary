@@ -1,20 +1,21 @@
 # AGENTS.md — 给 AI 助手与协作者的项目指南
 
-飞书机器人 → Obsidian 日记插件：用户对着飞书自建应用机器人发消息，内容按数据契约落进本地 vault。不依赖服务器，全部走飞书官方开放 API（WebSocket 长连接）。
+飞书机器人 → 日记：用户对着飞书自建应用机器人发消息，内容按数据契约落盘。两种宿主形态共用同一套编排：**Obsidian 插件**（落 vault）与 **npm CLI**（`npx feishu-diary`，落任意本地目录，无需 Obsidian）。不依赖服务器，全部走飞书官方开放 API（WebSocket 长连接）。
 
-**先读 [docs/DECISIONS.md](docs/DECISIONS.md)**——所有已拍板的设计决策（License、数据契约、时区硬编码、表情回执、扫码建应用）都在那里，改任何一条前先看它背后的理由。
+**先读 [docs/DECISIONS.md](docs/DECISIONS.md)**——所有已拍板的设计决策（License、数据契约、时区硬编码、表情回执、扫码建应用、CLI 单包双产物 D9）都在那里，改任何一条前先看它背后的理由。
 
 ## 常用命令
 
 ```sh
-pnpm run build      # tsc --noEmit + esbuild 产出 main.js（不 minify，tree-shake 后约 1MB）
+pnpm run build      # tsc --noEmit + esbuild 产出 main.js（插件，约 0.95MB）+ dist/cli.cjs（CLI，约 0.89MB）
 pnpm run test       # node --test（Node 26 原生 type-stripping，零测试框架）
 pnpm run lint       # oxlint（快速语法层）
 pnpm run lint:obsidian  # eslint + eslint-plugin-obsidianmd——社区自动审查同款规则，提交前必须清零
 pnpm run fmt        # oxfmt（会重排文件——编辑前重读文件，避免 Edit 冲突）
 pnpm run dev        # esbuild watch
 pnpm run release    # 发版唯一入口：同步 package/manifest/versions 三处版本 + commit + tag
-                   # 用法 pnpm run release [patch|minor|major|x.y.z] [--push]
+                     # 用法 pnpm run release [patch|minor|major|x.y.z] [--push]
+npm publish         # CLI 发 npm（与插件同版本号；prepublishOnly 自动 build+test）
 ```
 
 包管理器为 **pnpm 11**（锁文件 pnpm-lock.yaml；CI 用 pnpm/action-setup@v4）。
@@ -33,24 +34,31 @@ P0 通道脚本（凭据在 `scripts/p0/.env`，不入库）见 [scripts/p0/READ
 
 ```
 src/
-├── main.ts            # 插件入口：生命周期、状态栏、消息管线编排（去重→p2p→认主→意图→动作）
-├── settings.ts        # 设置类型与默认值（App Secret 走 SecretStorage，不在此）
-├── feishu/            # 通道层
-│   ├── channel.ts     #   WSClient 包装 + normalizeIncoming（★ 事件规范化，有单测固化结构）
-│   ├── client.ts      #   REST 封装（token 自管理、发消息、表情、下载）
-│   ├── http.ts        #   ★ 唯一 HTTP 出站层（obsidian requestUrl）+ SDK HttpInstance 实现
-│   ├── register.ts    #   扫码一键建应用（设备流 requestUrl 自实现 + addons 预填）
-│   └── vault-adapter.ts # Obsidian Vault → VaultLike 原子写适配（trash 走 FileManager）
-├── core/              # 业务层（纯逻辑，可单测）
-│   ├── intents.ts     #   意图识别（精确匹配 + 长度闸门 + 「记：」逃生口）
-│   ├── writer.ts      #   DiaryWriter：追加/封存/撤回的纯字符串变换 + VaultLike
-│   ├── attachments.ts #   附件路径与笔记块构造
-│   └── reminder.ts    #   每日提醒决策纯函数
-├── ui/                # 设置页 + 扫码创建 Modal（qrcode 渲染）
-└── util/              # time（唯一时间入口）/ dedupe（message_id LRU）/ filename（消毒）
+├── service.ts        # ★ 环境无关编排核心（去重→p2p→认主→意图→动作 + 提醒 tick + 回执），
+│                     #   零 obsidian import；注入 HttpApi/HttpInstance/StorageAdapter/persist
+├── main.ts           # 插件壳：生命周期/SecretStorage/设置页/状态栏 + 装配 service
+├── cli.ts            # CLI 壳（bin）：args/env 配置 + 装配 service + SIGINT/SIGTERM 优雅退出
+├── node/             # Node 运行时实现（CLI 侧）
+│   ├── http.ts       #   fetch 版 HttpApi + fetch 版 SDK HttpInstance
+│   ├── vault.ts      #   NodeFsVaultAdapter（tmp+rename 原子写 / trash→.trash / exists）
+│   └── config.ts     #   args>env>默认 配置解析（纯函数）+ 状态文件读写
+├── settings.ts       # 设置类型与默认值（插件 App Secret 走 SecretStorage，CLI 走 env，均不在此）
+├── feishu/           # 通道层
+│   ├── channel.ts    #   WSClient 包装 + normalizeIncoming（★ 事件规范化，有单测固化结构）
+│   ├── client.ts     #   REST 封装（token 自管理、发消息、表情、下载；HttpApi 注入）
+│   ├── http.ts       #   ★ obsidian requestUrl 版 HttpApi/HttpInstance + 环境无关接口定义
+│   ├── register.ts   #   扫码一键建应用（设备流 requestUrl 自实现 + addons 预填）
+│   └── vault-adapter.ts # Obsidian Vault → StorageAdapter 原子写适配（trash 走 FileManager）
+├── core/             # 业务层（纯逻辑，可单测）
+│   ├── intents.ts    #   意图识别（精确匹配 + 长度闸门 + 「记：」逃生口）
+│   ├── writer.ts     #   DiaryWriter：追加/封存/撤回的纯字符串变换 + VaultLike/StorageAdapter
+│   ├── attachments.ts #  附件路径与笔记块构造
+│   └── reminder.ts   #   每日提醒决策纯函数
+├── ui/               # 设置页 + 扫码创建 Modal（qrcode 渲染，仅插件）
+└── util/             # time（唯一时间入口）/ dedupe（message_id LRU）/ filename（消毒）
 ```
 
-分层原则：`core/` 不依赖 obsidian 与 SDK；`feishu/` 只管通道；业务编排在 `main.ts`。
+分层原则：`core/` 不依赖 obsidian 与 SDK；`feishu/` 只管通道；编排在 `service.ts`（环境无关），`main.ts`/`cli.ts` 是两个宿主壳；`node/` 只被 CLI 引用（不进 main.js 产物）。lint 豁免集中在 `eslint.config.mjs`（cli/node 关 no-console 与 fetch 限制、service 关 no-global-this），oxlint 的 `ignorePatterns` 排除 bundle 产物。
 
 ## 飞书通道硬知识（2026-09-01 实测踩坑，别再踩）
 
@@ -85,13 +93,17 @@ sender, message}`——**`data.message` 直接取，没有 `data.event` 包装**
    CORS 头。**解法不是自实现长连接**：`WSClient` 构造参数支持注入
    `httpInstance`，用 obsidian `requestUrl`（主进程网络栈）实现并注入即可；
    插件所有 HTTP 出站统一走 `feishu/http.ts` 的 requestUrl 封装。WebSocket
-   本身不受 CORS（ws 库直连）。**禁止在插件运行时代码里用 fetch/axios 访问飞书域**。
+   本身不受 CORS（ws 库直连）。**禁止在插件运行时代码（main.js 引用链）里用
+   fetch/axios 访问飞书域**——`src/node/` 与 `src/cli.ts` 是 CLI 运行时（不进
+   main.js），Node 下无 CORS，用 fetch 是正解（eslint 豁免已注明）。
 10. **SDK 体积与 tree-shaking**：SDK 的 CJS（`lib/`）与 ESM（`es/`）都是单文件
     barrel（6MB+），但 ESM 版 esbuild 可以做级联死代码删除——esbuild 配置
     `mainFields: ["module", "main"]` 强制走 ESM 入口后，main.js 从 6.1MB 降到
     约 1MB（不 minify、可审查）。产物超 5MB 会导致 Obsidian Sync Standard
-    用户无法同步。**改 SDK 相关 import 后务必检查产物体积**（tree-shaking
-    依赖引用链，新增引用可能把大块代码拉回来）。
+    用户无法同步。**改 SDK 相关 import 后务必检查两个产物体积**（main.js 与
+    dist/cli.cjs；tree-shaking 依赖引用链，新增引用可能把大块代码拉回来）。
+    另：CLI 产物必须 `format: "cjs"`——SDK 的 axios 依赖链含 CJS require，
+    esm 输出下运行时抛 `Dynamic require of "util"`（2026-09-02 实测踩坑）。
 11. **社区审核自动审查的坑**：`display()` 已 deprecated（声明式设置 API
     `getSettingDefinitions()` 是方向，1.13.0+ 支持设置搜索——未迁移会 Warning
     不阻塞）；`Vault.trash` 要换 `FileManager.trashFile`；定时器用
@@ -115,13 +127,21 @@ sender, message}`——**`data.message` 直接取，没有 `data.event` 包装**
 
 ## 当前状态（2026-09-02）
 
-Phase 1-3 代码完成（51 单测全绿），真机验证通过，已提交 community.obsidian.md
-审核（2026-09-01）。体积优化：tree-shaking 后 main.js 1.0MB（过 Sync 5MB 线），
+Phase 1-3 代码完成（68 单测全绿），真机验证通过，已提交 community.obsidian.md
+审核（2026-09-01）。体积优化：tree-shaking 后 main.js 0.95MB（过 Sync 5MB 线），
 release 带 artifact attestation。社区自动审查的 Error 与主要 Warning 已修
 （0.2.1），版本联动机制上线（npm run release）。
 
+**CLI 版（2026-09-02）**：编排抽成 `service.ts`（环境无关），npm 包 `feishu-diary`
+（`npx feishu-diary`，Node ≥18，产物 dist/cli.cjs 0.89MB 单文件零依赖）。真机
+验证：--env-file 凭据加载、认主预填、WS 连接 connecting→online（fetch 版
+HttpInstance）、SIGINT 优雅退出均通过。**尚未 npm publish**（包名已确认未被
+占用，首版手动 `npm publish`，跑通后再进 CI）；完整收发管线与插件共用 service
+（测试保护），CLI 侧专项测试覆盖 fs 存储与配置解析。决策记录见 D9。
+
 待验证：P0-1 断线补推实验（决定要不要历史消息补拉模块）。
 
-待开发：审核反馈跟进（getSettingDefinitions 声明式设置迁移——1.13.0+ 设置
-搜索，非阻塞）；P0-1 结论若需补拉则加历史消息模块；Phase 4（语音气泡样式、
-撤回事件同步 im.message.recalled_v1、富文本消息、ASR 自配 OpenAI 兼容开关）。
+待开发：CLI 的 init 扫码子命令（可选）；审核反馈跟进（getSettingDefinitions
+声明式设置迁移——1.13.0+ 设置搜索，非阻塞）；P0-1 结论若需补拉则加历史消息
+模块；Phase 4（语音气泡样式、撤回事件同步 im.message.recalled_v1、富文本消息、
+ASR 自配 OpenAI 兼容开关）。
