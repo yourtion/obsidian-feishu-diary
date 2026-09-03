@@ -62,6 +62,15 @@ Ogg/Opus 直存（Obsidian 可直接播）；飞书官方 ASR 是设置开关而
 - v1 不含 `init` 扫码子命令（`p0:init` 已覆盖），后续可加。
 - ✅ 发布闭环（2026-09-02）：npm 首发手动完成（0.2.3 含 CLI 代码），`release.yml` 已整合 npm publish——tag push → GitHub release（插件资产 + attest）→ npm publish，两步均幂等可重跑。npm 认证走 **Trusted Publishers（OIDC）** 而非 NPM_TOKEN：无凭据泄露面，但硬要求 Node ≥22.14 + npm ≥11.5.1（CI 用 Node 24）、`id-token: write`、package.json `repository` 字段，且 npmjs.com 后台绑定须与 workflow 完全一致（repo + workflow filename `release.yml` + 无 environment，大小写敏感，每个包仅可绑一个）；provenance 随 OIDC 发布自动生成。此后插件与 npm 版本由同一 tag 强制对齐，`pnpm run release --push` 单一入口不变。
 
+## D10 · 插件本机启用开关：默认关，存 App#saveLocalStorage（2026-09-03 补）
+
+**背景**：同一 vault 可能在多台机器上开 Obsidian，但长连接服务只应在一台跑（集群模式事件随机分推，见硬知识 6）。默认全开会多机抢事件。
+
+- **默认关闭**：安装后 onload 不建连，状态栏显示「已停用」；「在本机启用」是设置页接入组的第一项。
+- **开关存 `App#saveLocalStorage`（本机 localStorage、vault 间隔离），不进 data.json**：data.json 随 vault 同步（Obsidian Sync / iCloud），存那里一台开、全机器开，违背 per-machine 语义。代价是清应用数据会丢开关——重开一次即可，可接受。eslint-plugin-obsidianmd 对裸 `localStorage` 有 no-restricted-globals 警告，`App#saveLocalStorage` 正是官方推荐位。
+- **扫码创建成功自动开闸**（`applyScanResult`）：扫码是明确的启用动作，不开闸新用户会以为坏了。手动改凭据不自动开——开关是唯一总闸，`restartChannel` 关闸时不建连。
+- **CLI 无此开关**：进程显式启动即显式启用，无「装了但不想跑」状态。
+
 ## 技术栈与架构约定
 
 - TS strict + oxlint + oxfmt + esbuild + node:test（Node 原生 type-stripping 跑测试，零测试框架依赖）

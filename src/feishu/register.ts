@@ -112,7 +112,9 @@ export async function createAppByScan(
     );
   }
 
-  // 2. 组装确认页 URL（参数与 SDK 完全一致）
+  // 2. 组装确认页 URL（参数与 SDK 一致）。
+  // 不带 createOnly：落地页原生提供「选择已有应用」入口——可复用既有应用
+  // （如后台手动建的），addons 以增量 diff 确认，顺带补齐缺失的权限/事件。
   const qrUrl = new URL(beginData.verification_uri_complete);
   qrUrl.searchParams.set("from", "sdk");
   qrUrl.searchParams.set("source", "obsidian-feishu-diary");
@@ -127,7 +129,6 @@ export async function createAppByScan(
       events: { items: { tenant: [...REQUIRED_EVENTS], user: [] } },
     }),
   );
-  qrUrl.searchParams.set("createOnly", "true");
 
   const expireInSeconds = beginData.expires_in ?? 600;
   callbacks.onQRCodeReady({ url: qrUrl.toString(), expireInSeconds });

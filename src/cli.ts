@@ -8,6 +8,7 @@ import process from "node:process";
 import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { FeishuDiaryService } from "./service.ts";
+import { channelStatusLabel } from "./feishu/channel.ts";
 import { createNodeHttpInstance, nodeHttp } from "./node/http.ts";
 import { NodeFsVaultAdapter } from "./node/vault.ts";
 import {
@@ -65,7 +66,10 @@ async function main(): Promise<void> {
       });
     },
     notify: (message) => console.error(`[feishu-diary] ${message}`),
-    onStatus: (status) => console.log(`[feishu-diary] 通道状态：${status}`),
+    onStatus: (status, detail) =>
+      console.log(
+        `[feishu-diary] 通道状态：${channelStatusLabel(status)}${detail ? `（${detail}）` : ""}`,
+      ),
   });
 
   console.log("[feishu-diary] 启动");

@@ -40,7 +40,7 @@ export class ScanSetupModal extends Modal {
     });
     this.contentEl.createEl("p", {
       cls: "setting-item-description",
-      text: "用手机飞书扫码，确认后自动创建应用并配置好权限——无需进开发者后台。扫码的账号即成为日记主人。",
+      text: "用手机飞书扫码：可创建新应用，也可在确认页选择已有应用复用（自动补齐所需权限与事件）。扫码的账号即成为日记主人。",
     });
     const linkEl = this.contentEl.createEl("p");
 

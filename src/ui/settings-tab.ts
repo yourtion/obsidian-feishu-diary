@@ -30,9 +30,30 @@ export class FeishuDiarySettingTab extends PluginSettingTab {
         heading: "接入",
         items: [
           {
-            name: "一键创建应用",
-            desc: "用手机飞书扫码确认后，自动创建自建应用、开通所需权限与事件订阅，凭据自动保存。创建后需在开发者后台发布一次版本",
-            aliases: ["扫码", "scan", "setup", "创建应用"],
+            name: "在本机启用",
+            desc: "接收飞书消息并落盘的总开关，默认关闭。只存本机（不随 vault 同步）——同一 vault 多机运行时，只在跑服务的机器上打开；扫码创建成功会自动打开",
+            aliases: ["启用", "开关", "enable"],
+            render: (setting: Setting) => {
+              setting.addToggle((toggle) =>
+                toggle.setValue(this.plugin.channelEnabled).onChange((value) => {
+                  void (async () => {
+                    this.plugin.setChannelEnabled(value);
+                    if (value) {
+                      await this.plugin.restartChannel();
+                      new Notice("已启用，正在连接");
+                    } else {
+                      await this.plugin.stopChannel();
+                      new Notice("已在本机停用");
+                    }
+                  })();
+                }),
+              );
+            },
+          },
+          {
+            name: "扫码创建或绑定应用",
+            desc: "用手机飞书扫码：创建新应用，或选择已有应用复用（自动补齐所需权限与事件）。凭据自动保存；配置变更后需在开发者后台发布一次版本",
+            aliases: ["扫码", "scan", "setup", "创建应用", "绑定"],
             action: () => {
               new ScanSetupModal(this.app, async (result) => {
                 await this.plugin.applyScanResult(result.appId, result.appSecret, result.openId);
@@ -59,8 +80,12 @@ export class FeishuDiarySettingTab extends PluginSettingTab {
                   if (trimmed.length === 0) return;
                   await this.plugin.storeAppSecret(trimmed);
                   text.setValue("");
-                  new Notice("App secret 已保存，正在重连");
-                  await this.plugin.restartChannel();
+                  if (!this.plugin.channelEnabled) {
+                    new Notice("App secret 已保存（服务未启用，打开「在本机启用」后生效）");
+                  } else {
+                    new Notice("App secret 已保存，正在重连");
+                    await this.plugin.restartChannel();
+                  }
                   this.update();
                 });
               });
@@ -71,6 +96,10 @@ export class FeishuDiarySettingTab extends PluginSettingTab {
             desc: "凭据或订阅方式变更后，重启长连接",
             action: () => {
               void (async () => {
+                if (!this.plugin.channelEnabled) {
+                  new Notice("服务未启用——先打开「在本机启用」");
+                  return;
+                }
                 await this.plugin.restartChannel();
                 new Notice("已触发重连");
               })();

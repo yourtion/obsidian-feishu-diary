@@ -9,6 +9,7 @@ Also available as a **standalone CLI** — `npx feishu-diary` writes the same di
 ## Features
 
 - **Scan to set up**: create your Feishu app by scanning a QR code in the plugin settings — permissions and event subscriptions are pre-configured automatically
+- **Per-machine enable switch**: the bot service is off by default and toggled per machine (stored in local storage, not synced with your vault) — safe to run the same vault on multiple machines, only one of them listens
 - **Send anything, it's a diary entry**: each message becomes an entry in `FeishuDiary/YYYY/YYYY-MM-DD.md`, with messages in the same minute sharing one timestamp heading
 - **Two-state reaction receipts**: ⏳ received → ✅ done, no chat noise; only commands and errors produce text replies
 - **Attachments**: images/videos embedded, files linked, voice notes stored as-is (Ogg/Opus, playable inside Obsidian)
@@ -30,9 +31,11 @@ Your App Secret is stored in Obsidian's SecretStorage, never in plugin data file
 ## Setup
 
 1. Install the plugin and open its settings
-2. Click "扫码创建" (Scan to create) and confirm on your phone — this creates a Feishu custom app with the required permissions
+2. Click "扫码创建" (Scan to create) and confirm on your phone — this creates a Feishu custom app with the required permissions (the "Enable on this machine" switch turns on automatically)
 3. Publish the app version in the Feishu developer console (the QR flow pre-fills everything; publishing takes two clicks)
 4. Find the bot in Feishu and start talking
+
+The bot service is **off by default** and toggled per machine via "在本机启用" (Enable on this machine) — the switch is stored locally and never synced with your vault, so multi-machine vaults only listen on the machines you choose.
 
 ## CLI usage
 
@@ -70,6 +73,7 @@ Channel verification and onboarding scripts live in [scripts/p0/README.md](scrip
 对着飞书机器人说话，内容落进本地 Obsidian 库——不依赖服务器，全部走飞书官方开放 API（WebSocket 长连接）。也提供**独立 CLI 版**（`npx feishu-diary`），无需 Obsidian，可跑在任意有 Node 的机器上，写入任意本地目录。
 
 - **扫码即用**：设置页扫码一键创建飞书自建应用（自动配好权限与事件订阅），无需进开发者后台
+- **本机启用开关**：服务默认关闭，按机器开关（只存本机，不随 vault 同步）——多机共用同一 vault 也不怕抢消息，只在指定机器上监听
 - **发什么记什么**：一次发送 = 一条日记，同分钟消息共享时间戳段头
 - **表情两态回执**：⏳ 收到 → ✅ 完成，不打扰；命令与异常才发文字
 - **附件入库**：图片/视频嵌入、文件链接、语音 🎤 原声直存（Obsidian 可直接播）

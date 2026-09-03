@@ -27,6 +27,19 @@ export interface IncomingMessage {
 
 export type ChannelStatus = "connecting" | "online" | "reconnecting" | "offline" | "failed";
 
+/** 状态 → 用户可读文案（状态栏/CLI 日志共用）；service 层自报的中文状态原样透传。 */
+const CHANNEL_STATUS_LABELS: Record<ChannelStatus, string> = {
+  connecting: "连接中",
+  online: "在线",
+  reconnecting: "重连中",
+  offline: "已断开",
+  failed: "连接失败",
+};
+
+export function channelStatusLabel(status: string): string {
+  return CHANNEL_STATUS_LABELS[status as ChannelStatus] ?? status;
+}
+
 /**
  * SDK 长连接 handler 收到的事件（im.message.receive_v1，schema 2.0）。
  * 注意：SDK 的 EventDispatcher.parse 已把 header/event 展平到顶层，
