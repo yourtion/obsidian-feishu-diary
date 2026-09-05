@@ -115,3 +115,8 @@ export function weekdayOfDate(dateStr: string): string {
   const ms = Date.parse(`${dateStr}T12:00:00+08:00`);
   return timeParts(ms).weekday;
 }
+
+/** 上一个逻辑日（YYYY-MM-DD）：取该日正午减 24 小时（正午恒 ≥ dayStartHour）。 */
+export function prevLogicalDate(logical: string): string {
+  return calendarDate(Date.parse(`${logical}T12:00:00+08:00`) - 24 * 60 * 60 * 1000);
+}

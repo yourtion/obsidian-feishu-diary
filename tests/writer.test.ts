@@ -24,6 +24,10 @@ class MemoryVault implements VaultLike {
     this.trashed.push(path);
     this.files.delete(path);
   }
+
+  async exists(path: string): Promise<boolean> {
+    return this.files.has(path);
+  }
 }
 
 test("追加到空文件：frontmatter + 标题 + 段头 + 内容", async () => {
@@ -144,4 +148,30 @@ test("撤回作用于当前逻辑日文件（凌晨撤回昨晚内容）", async
   // 09-01 03:00 仍属 08-31 逻辑日
   const removed = await writer.recall(at("2026-09-01T03:00:00+08:00"));
   assert.equal(removed, "昨晚最后一条");
+});
+
+test("撤回跨凌晨 4 点边界：新逻辑日无内容时回退上一逻辑日", async () => {
+  const vault = new MemoryVault();
+  const writer = new DiaryWriter(vault, "FeishuDiary");
+  // 03:58 记的内容落 08-31 逻辑日；04:01 撤回时已属 09-01 新逻辑日
+  await writer.append(at("2026-09-01T03:58:00+08:00"), "凌晨一条");
+  const removed = await writer.recall(at("2026-09-01T04:01:00+08:00"));
+  assert.equal(removed, "凌晨一条");
+  assert.deepEqual(vault.trashed, ["FeishuDiary/2026/2026-08-31.md"]);
+});
+
+test("撤回跨年边界：1 月 1 日凌晨回退到上一年", async () => {
+  const vault = new MemoryVault();
+  const writer = new DiaryWriter(vault, "FeishuDiary");
+  await writer.append(at("2026-01-01T03:00:00+08:00"), "跨年一条");
+  const removed = await writer.recall(at("2026-01-01T05:00:00+08:00"));
+  assert.equal(removed, "跨年一条");
+});
+
+test("撤回时文件不存在：不建空文件，返回 null", async () => {
+  const vault = new MemoryVault();
+  const writer = new DiaryWriter(vault, "FeishuDiary");
+  const removed = await writer.recall(at("2026-08-31T10:00:00+08:00"));
+  assert.equal(removed, null);
+  assert.deepEqual([...vault.files.keys()], []);
 });

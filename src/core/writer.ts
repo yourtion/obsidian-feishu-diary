@@ -5,12 +5,23 @@
  * process 语义：原子读-改-写，文件不存在时视内容为空字符串并落盘结果。
  */
 import { newFileContent, TIMESTAMP_HEADING_RE, timestampHeading } from "./contract.ts";
-import { diaryYearDir, logicalDate, timeParts, weekdayOfDate } from "../util/time.ts";
+import {
+  diaryYearDir,
+  logicalDate,
+  prevLogicalDate,
+  timeParts,
+  weekdayOfDate,
+} from "../util/time.ts";
 import type { TimeParts } from "../util/time.ts";
 
 export interface VaultLike {
   process(path: string, fn: (content: string) => string): Promise<string>;
   trash(path: string): Promise<void>;
+}
+
+/** 撤回需要 exists 判断：不存在的文件不 process（process 会把缺失文件落盘为空文件）。 */
+interface RecallVault extends VaultLike {
+  exists(path: string): Promise<boolean>;
 }
 
 /**
@@ -141,10 +152,10 @@ function fileParts(logical: string): TimeParts {
 }
 
 export class DiaryWriter {
-  private readonly vault: VaultLike;
+  private readonly vault: RecallVault;
   private readonly rootDir: string;
 
-  constructor(vault: VaultLike, rootDir: string) {
+  constructor(vault: RecallVault, rootDir: string) {
     this.vault = vault;
     this.rootDir = rootDir;
   }
@@ -175,12 +186,22 @@ export class DiaryWriter {
   }
 
   /**
-   * 撤回当前逻辑日文件的最后一个内容块。
-   * 返回被删内容；无可删返回 null。文件撤空后 trash 整个文件。
+   * 撤回最后一个内容块：先试当前逻辑日文件，无可删时回退上一个逻辑日
+   * （凌晨跨 4 点边界撤回昨晚内容）。返回被删内容；无可删返回 null。
+   * 文件撤空后 trash 整个文件。
    */
   async recall(nowMs: number): Promise<string | null> {
     const logical = logicalDate(nowMs);
+    return (
+      (await this.recallInLogical(logical)) ??
+      (await this.recallInLogical(prevLogicalDate(logical)))
+    );
+  }
+
+  private async recallInLogical(logical: string): Promise<string | null> {
     const path = diaryPath(this.rootDir, logical);
+    // 文件不存在直接跳过（process 会把缺失文件落盘为空文件）
+    if (!(await this.vault.exists(path))) return null;
     let removed: string | null = null;
     let empty = false;
     await this.vault.process(path, (content) => {

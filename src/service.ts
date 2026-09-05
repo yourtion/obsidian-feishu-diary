@@ -65,6 +65,8 @@ export class FeishuDiaryService {
   private client: FeishuClient | null = null;
   private writer: DiaryWriter | null = null;
   private readonly deduper = new MessageDeduper();
+  /** 消息处理串行队列（尾链）：handler 3 秒内返回 + process 读-改-写不并发。 */
+  private queue: Promise<void> = Promise.resolve();
   private reminderTimer: ReturnType<typeof setInterval> | null = null;
   private readonly opts: ServiceOptions;
 
@@ -140,7 +142,7 @@ export class FeishuDiaryService {
     if (!this.opts.settings.ownerOpenId) {
       this.opts.settings.ownerOpenId = msg.senderOpenId;
       await this.persistSettings();
-      await this.reply(
+      void this.reply(
         msg.senderOpenId,
         "已认主：从现在起，你发给我的每句话都会记进日记。发送「帮助」看用法。",
       );
@@ -148,7 +150,13 @@ export class FeishuDiaryService {
 
     if (msg.senderOpenId !== this.opts.settings.ownerOpenId) return;
 
-    await this.dispatchIntent(msg);
+    // 意图分发（含附件下载等重活）异步执行：事件 handler 须 3 秒内返回，
+    // 否则触发服务端超时重推（去重能兜住，但白白浪费）。
+    // 链式队列保串行——并发 process（读-改-写）会竞态丢更新。
+    const task = this.queue.then(() => this.dispatchIntent(msg));
+    this.queue = task.catch((err) => {
+      console.error("[feishu-diary] 消息处理失败:", err);
+    });
   }
 
   private async dispatchIntent(msg: IncomingMessage): Promise<void> {
@@ -175,7 +183,8 @@ export class FeishuDiaryService {
         });
         return;
       case "recall": {
-        const removed = await this.writer?.recall(Date.now());
+        // 用消息真实时间定位逻辑日（与 append 同基准），凌晨跨 4 点边界由 writer 回退兜底
+        const removed = await this.writer?.recall(msg.createTimeMs);
         await this.reply(
           msg.senderOpenId,
           removed ? `已撤回：${removed.slice(0, 50)}` : "没有可以撤回的内容",
@@ -301,23 +310,29 @@ export class FeishuDiaryService {
       this.resetReminderStreak();
     } catch (err) {
       console.error("[feishu-diary] 写入失败:", err);
+      // 失败也要摘掉执行中表情（两态回执约定），失败状态由文字回执表达
+      await this.removeDoingReaction(msg.messageId, doingReactionId);
       await this.reply(
         msg.senderOpenId,
         `没存上：${err instanceof Error ? err.message : String(err)}`,
       );
       return;
     }
-    if (doingReactionId) {
-      try {
-        await this.client?.removeReaction(msg.messageId, doingReactionId);
-      } catch (err) {
-        console.warn("[feishu-diary] 移除执行中表情失败:", err);
-      }
-    }
+    await this.removeDoingReaction(msg.messageId, doingReactionId);
     try {
       await this.client?.addReaction(msg.messageId, EMOJI_DONE);
     } catch (err) {
       console.warn("[feishu-diary] 添加完成表情失败:", err);
+    }
+  }
+
+  /** 摘掉执行中表情；失败不阻塞主流程。 */
+  private async removeDoingReaction(messageId: string, reactionId: string | null): Promise<void> {
+    if (!reactionId) return;
+    try {
+      await this.client?.removeReaction(messageId, reactionId);
+    } catch (err) {
+      console.warn("[feishu-diary] 移除执行中表情失败:", err);
     }
   }
 

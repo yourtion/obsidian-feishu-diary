@@ -159,7 +159,14 @@ export interface CliState {
 export async function loadState(file: string): Promise<Partial<CliState> | null> {
   try {
     return JSON.parse(await readFile(file, "utf8")) as Partial<CliState>;
-  } catch {
+  } catch (err) {
+    // 文件不存在是正常路径；损坏则大声警告——认主丢失后首条消息会重新抢注
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error(
+        `[feishu-diary] 状态文件读取失败，按默认状态启动（认主/称呼/提醒进度可能丢失，请检查 ${file}）：`,
+        err,
+      );
+    }
     return null;
   }
 }

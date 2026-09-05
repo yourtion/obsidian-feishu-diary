@@ -50,6 +50,9 @@ export default class FeishuDiaryPlugin extends Plugin {
   }
 
   override onunload(): void {
+    // onunload 钩子先于 register 回调执行，须在此直接停服；
+    // 先置 null 会让 register 里的 stop 永不触发（残留 WSClient，事件随机分推）。
+    void this.service?.stop();
     this.service = null;
   }
 
