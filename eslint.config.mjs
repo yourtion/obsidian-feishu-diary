@@ -19,12 +19,14 @@ export default defineConfig([
     // CLI 运行时（src/cli.ts + src/node/，不进 main.js 插件产物）：
     // stdout/stderr 是本职输出；Node 下无 Electron renderer 的 CORS 约束，
     // fetch 即官方姿势（scripts/p0 已实证，见 AGENTS.md 硬知识 9 的适用边界）。
+    // 定时器用 Node 全局版即可（无 window/popout 概念，如 node/hooks.ts 的超时器）。
     // obsidianmd/rule-custom-message 是 no-console 的语境包装规则，需一并关闭。
     files: ["src/cli.ts", "src/node/**/*.ts"],
     rules: {
       "no-console": "off",
       "obsidianmd/rule-custom-message": "off",
       "no-restricted-globals": "off",
+      "obsidianmd/prefer-window-timers": "off",
     },
   },
   {

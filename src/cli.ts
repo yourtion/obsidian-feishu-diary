@@ -11,6 +11,7 @@ import { FeishuDiaryService } from "./service.ts";
 import { channelStatusLabel } from "./feishu/channel.ts";
 import { createNodeHttpInstance, nodeHttp } from "./node/http.ts";
 import { NodeFsVaultAdapter } from "./node/vault.ts";
+import { loadHooks, runShellHook } from "./node/hooks.ts";
 import {
   USAGE,
   buildSettings,
@@ -50,6 +51,15 @@ async function main(): Promise<void> {
   const config = resolution.config;
   if (!config) return;
 
+  // hooks.json 坏配置直接退出（配置错误不该带病启动）；不存在 = 未启用。
+  let hooks;
+  try {
+    hooks = await loadHooks(config.hooksFile);
+  } catch (err) {
+    console.error(`\nhooks 配置错误：${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(2);
+  }
+
   const state = await loadState(config.stateFile);
   const settings = buildSettings(config, state);
   const service = new FeishuDiaryService({
@@ -70,6 +80,8 @@ async function main(): Promise<void> {
       console.log(
         `[feishu-diary] 通道状态：${channelStatusLabel(status)}${detail ? `（${detail}）` : ""}`,
       ),
+    hooks: hooks.rules,
+    hookRunner: (cmd, url) => runShellHook(cmd, url, hooks.timeoutMs),
   });
 
   console.log("[feishu-diary] 启动");
@@ -78,6 +90,9 @@ async function main(): Promise<void> {
   console.log(`  认主：${settings.ownerOpenId ?? "待首消息自动认主"}`);
   console.log(`  提醒：${settings.reminderEnabled ? `${settings.reminderTime}（东八区）` : "关"}`);
   console.log(`  状态文件：${config.stateFile}`);
+  console.log(
+    `  URL hooks：${hooks.rules.length > 0 ? `${hooks.rules.length} 条（${config.hooksFile}，超时 ${Math.round(hooks.timeoutMs / 1000)}s）` : "未启用"}`,
+  );
 
   await service.start();
 

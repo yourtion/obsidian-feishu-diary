@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { normalizeIncoming } from "../src/feishu/channel.ts";
+import { flattenPost, normalizeIncoming } from "../src/feishu/channel.ts";
 
 /**
  * SDK 长连接 handler 收到的真实结构（EventDispatcher.parse 已把 header/event
@@ -81,4 +81,84 @@ test("normalizeIncoming 容忍非 JSON 的 text content", () => {
   });
   assert.ok(msg);
   assert.equal(msg.text, "");
+});
+
+// ---------- 富文本 post（链接/分享消息的真身） ----------
+
+const postContent = {
+  title: "周报",
+  content: [
+    [
+      { tag: "text", text: "本周看了 " },
+      { tag: "a", text: "这篇文章", href: "https://example.com/post/1" },
+      { tag: "text", text: "，作者" },
+      { tag: "at", user_id: "ou_9", user_name: "老王" },
+    ],
+    [{ tag: "img", image_key: "img_v2_x" }],
+    [{ tag: "emotion", emoji_type: "SMILE" }],
+  ],
+};
+
+test("normalizeIncoming 解析 post 富文本为扁平 markdown", () => {
+  const msg = normalizeIncoming({
+    ...flattenedP2pTextEvent,
+    message: {
+      ...flattenedP2pTextEvent.message,
+      message_type: "post",
+      content: JSON.stringify(postContent),
+    },
+  });
+  assert.ok(msg);
+  assert.equal(
+    msg.text,
+    ["周报", "本周看了 [这篇文章](https://example.com/post/1)，作者@老王", "[图片]", "[表情]"].join(
+      "\n",
+    ),
+  );
+});
+
+test("normalizeIncoming 对 rich_text 类型同样解析", () => {
+  const msg = normalizeIncoming({
+    ...flattenedP2pTextEvent,
+    message: {
+      ...flattenedP2pTextEvent.message,
+      message_type: "rich_text",
+      content: JSON.stringify(postContent),
+    },
+  });
+  assert.ok(msg);
+  assert.ok(msg.text.includes("[这篇文章](https://example.com/post/1)"));
+});
+
+test("normalizeIncoming 容忍畸形 post content（降级空 text）", () => {
+  const msg = normalizeIncoming({
+    ...flattenedP2pTextEvent,
+    message: { ...flattenedP2pTextEvent.message, message_type: "post", content: "{{not-json" },
+  });
+  assert.ok(msg);
+  assert.equal(msg.text, "");
+});
+
+test("flattenPost：兼容发送 API 的语言键包装；media/hr/code_block 占位", () => {
+  const wrapped = JSON.stringify({ zh_cn: postContent });
+  assert.ok(flattenPost(wrapped).includes("[这篇文章](https://example.com/post/1)"));
+
+  const rich = flattenPost(
+    JSON.stringify({
+      content: [
+        [{ tag: "media", file_key: "f1", image_key: "i1" }],
+        [{ tag: "hr" }],
+        [{ tag: "code_block", language: "GO", text: "func main() {}" }],
+        [{ tag: "unknown_tag", x: 1 }],
+      ],
+    }),
+  );
+  assert.equal(rich, "[视频]\n---\nfunc main() {}");
+});
+
+test("flattenPost：content 缺失时回退 content_v2 的 md 标签", () => {
+  const text = flattenPost(
+    JSON.stringify({ content_v2: [[{ tag: "md", text: "一行[链接](https://a.com)" }]] }),
+  );
+  assert.equal(text, "一行[链接](https://a.com)");
 });

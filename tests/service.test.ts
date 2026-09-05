@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { FeishuDiaryService } from "../src/service.ts";
-import type { ChannelLike, ClientLike } from "../src/service.ts";
+import type { ChannelLike, ClientLike, ServiceOptions } from "../src/service.ts";
 import type { IncomingMessage } from "../src/feishu/channel.ts";
 import type { HttpApi } from "../src/feishu/http.ts";
 import type { StorageAdapter } from "../src/core/writer.ts";
@@ -95,7 +95,10 @@ interface Harness {
   persisted: () => FeishuDiarySettings | null;
 }
 
-async function makeService(ownerOpenId: string | null = "ou_me"): Promise<Harness> {
+async function makeService(
+  ownerOpenId: string | null = "ou_me",
+  extra: Partial<ServiceOptions> = {},
+): Promise<Harness> {
   const storage = new MemoryStorage();
   const client = new FakeClient();
   const settings: FeishuDiarySettings = {
@@ -123,6 +126,7 @@ async function makeService(ownerOpenId: string | null = "ou_me"): Promise<Harnes
       return fakeChannel;
     },
     clientFactory: () => client,
+    ...extra,
   });
   await svc.start();
   return {
@@ -139,6 +143,17 @@ async function makeService(ownerOpenId: string | null = "ou_me"): Promise<Harnes
 function drain(h: Harness): Promise<void> {
   return (h.svc as unknown as { queue: Promise<void> }).queue;
 }
+
+/** 轮询等待条件成立（hook 走并发 lane，其完成以 DONE 表情为标志）。 */
+async function waitFor(cond: () => boolean, ms = 2000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > deadline) throw new Error("waitFor 超时");
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+const DAY_FILE = "FeishuDiary/2026/2026-09-05.md";
 
 test("文字消息写入当天文件并走完两态回执 OnIt→摘除→DONE", async () => {
   const h = await makeService();
@@ -302,5 +317,210 @@ test("畸形媒体 content：OnIt 被摘除并文字回执，不崩", async () =
   assert.equal(h.storage.files.size, 0);
   assert.equal(h.client.removedReactionIds.length, 1);
   assert.match(h.client.texts.at(-1)?.text ?? "", /^没存上：/);
+  await h.svc.stop();
+});
+
+// ---------- URL hooks（CLI 注入 hooks/hookRunner；插件不注入即无此路径） ----------
+
+function dayContent(h: Harness): string {
+  return h.storage.files.get(DAY_FILE) ?? "";
+}
+
+test("URL 命中 hook：原文与 stdout 都落盘，两态回执", async () => {
+  const calls: { cmd: string; url: string }[] = [];
+  const h = await makeService("ou_me", {
+    hooks: [{ match: /example\.com/, cmd: "my-dl --x" }],
+    hookRunner: async (cmd, url) => {
+      calls.push({ cmd, url });
+      return "已下载: ep42.mp3";
+    },
+  });
+  await h.send(textMsg({ text: "听听这个 https://example.com/ep42" }));
+  await waitFor(() => h.client.reactions.some((r) => r.emoji === "DONE"));
+  await drain(h);
+  assert.deepEqual(calls, [{ cmd: "my-dl --x", url: "https://example.com/ep42" }]);
+  const content = dayContent(h);
+  assert.ok(content.includes("听听这个 https://example.com/ep42"));
+  assert.ok(content.includes("已下载: ep42.mp3"));
+  assert.deepEqual(
+    h.client.reactions.map((r) => r.emoji),
+    ["OnIt", "DONE"],
+  );
+  await h.svc.stop();
+});
+
+test("hook 命令失败：摘 OnIt、错误回执注明原文已记、无 DONE", async () => {
+  const h = await makeService("ou_me", {
+    hooks: [{ match: /example\.com/, cmd: "bad-cmd" }],
+    hookRunner: async () => {
+      throw new Error("命令退出码 3：bad-cmd\nboom");
+    },
+  });
+  await h.send(textMsg({ text: "https://example.com/x", messageId: "om_fail" }));
+  await waitFor(() => h.client.texts.some((t) => t.text.includes("hook 失败")));
+  await drain(h);
+  const receipt = h.client.texts.at(-1)?.text ?? "";
+  assert.match(receipt, /^hook 失败：命令退出码 3/);
+  assert.match(receipt, /原文已记入日记/);
+  assert.equal(h.client.removedReactionIds.length, 1);
+  assert.equal(
+    h.client.reactions.some((r) => r.emoji === "DONE"),
+    false,
+  );
+  assert.ok(dayContent(h).includes("https://example.com/x"));
+  await h.svc.stop();
+});
+
+test("hook 慢不堵队列：命令挂起时后续消息照常落盘", async () => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const h = await makeService("ou_me", {
+    hooks: [{ match: /example\.com/, cmd: "slow-dl" }],
+    hookRunner: async () => {
+      await gate;
+      return "slow done";
+    },
+  });
+  try {
+    await h.send(textMsg({ text: "https://example.com/big", messageId: "om_hook" }));
+    await h.send(textMsg({ text: "普通一条", messageId: "om_normal" }));
+    // hook 原文经 withReceipt 异步入队，可能晚于普通消息任务——轮询等两者都落盘
+    await waitFor(() => {
+      const c = dayContent(h);
+      return c.includes("https://example.com/big") && c.includes("普通一条");
+    });
+    // DONE 只看 hook 那条消息（普通消息自己的两态回执本就会 DONE）
+    const hookDone = (): boolean =>
+      h.client.reactions.some((r) => r.messageId === "om_hook" && r.emoji === "DONE");
+    assert.equal(hookDone(), false);
+    release();
+    await waitFor(hookDone);
+    await drain(h);
+    assert.ok(dayContent(h).includes("slow done"));
+  } finally {
+    release(); // 断言失败也要放行 gate 并停服务，否则挂住进程
+    await h.svc.stop();
+  }
+});
+
+test("「记：」逃生口优先于 hook：强制落库不执行命令", async () => {
+  let ran = 0;
+  const h = await makeService("ou_me", {
+    hooks: [{ match: /example\.com/, cmd: "dl" }],
+    hookRunner: async () => {
+      ran++;
+      return "";
+    },
+  });
+  await h.send(textMsg({ text: "记：https://example.com/x", messageId: "om_forced" }));
+  await drain(h);
+  assert.equal(ran, 0);
+  assert.ok(dayContent(h).includes("https://example.com/x"));
+  await h.svc.stop();
+});
+
+test("命令词与媒体消息不触发 hook（宽规则下）", async () => {
+  let ran = 0;
+  const h = await makeService("ou_me", {
+    hooks: [{ match: /./s, cmd: "wide" }],
+    hookRunner: async () => {
+      ran++;
+      return "";
+    },
+  });
+  await h.send(textMsg({ text: "撤回", messageId: "om_r2" }));
+  await h.send(textMsg({ text: "在吗", messageId: "om_p2" }));
+  await h.send(
+    textMsg({
+      messageId: "om_img2",
+      messageType: "image",
+      content: JSON.stringify({ image_key: "img_v2_h" }),
+      text: "",
+    }),
+  );
+  await drain(h);
+  assert.equal(ran, 0);
+  assert.ok(h.client.texts.some((t) => t.text.includes("没有可以撤回")));
+  assert.equal(h.storage.binaries.size, 1);
+  await h.svc.stop();
+});
+
+test("stdout 为空：只记原文一条", async () => {
+  const h = await makeService("ou_me", {
+    hooks: [{ match: /example\.com/, cmd: "dl" }],
+    hookRunner: async () => "  \n",
+  });
+  await h.send(textMsg({ text: "https://example.com/only", messageId: "om_empty" }));
+  await waitFor(() => h.client.reactions.some((r) => r.emoji === "DONE"));
+  await drain(h);
+  assert.equal(dayContent(h).split("https://example.com/only").length - 1, 1);
+  await h.svc.stop();
+});
+
+test("多 URL 逐个执行，stdout 依序追加", async () => {
+  const urls: string[] = [];
+  const h = await makeService("ou_me", {
+    hooks: [{ match: /example\.com/, cmd: "dl" }],
+    hookRunner: async (_cmd, url) => {
+      urls.push(url);
+      return `done ${url}`;
+    },
+  });
+  await h.send(
+    textMsg({
+      text: "两个都要 https://example.com/1 和 https://example.com/2",
+      messageId: "om_two",
+    }),
+  );
+  await waitFor(() => h.client.reactions.some((r) => r.emoji === "DONE"));
+  await drain(h);
+  assert.deepEqual(urls, ["https://example.com/1", "https://example.com/2"]);
+  const content = dayContent(h);
+  const i1 = content.indexOf("done https://example.com/1");
+  const i2 = content.indexOf("done https://example.com/2");
+  assert.ok(i1 >= 0 && i2 > i1);
+  await h.svc.stop();
+});
+
+test("post 富文本消息：正常记日记且可触发 hook", async () => {
+  const calls: string[] = [];
+  const h = await makeService("ou_me", {
+    hooks: [{ match: /feishu\.cn/, cmd: "fs-dl" }],
+    hookRunner: async (_cmd, url) => {
+      calls.push(url);
+      return "文档已存";
+    },
+  });
+  await h.send(
+    textMsg({
+      messageId: "om_post",
+      messageType: "post",
+      text: "看这篇[笔记](https://x.feishu.cn/docx/abc)",
+      content: JSON.stringify({
+        title: "分享",
+        content: [[{ tag: "a", text: "笔记", href: "https://x.feishu.cn/docx/abc" }]],
+      }),
+    }),
+  );
+  await waitFor(() => h.client.reactions.some((r) => r.emoji === "DONE"));
+  await drain(h);
+  assert.deepEqual(calls, ["https://x.feishu.cn/docx/abc"]);
+  const content = dayContent(h);
+  assert.ok(content.includes("[笔记](https://x.feishu.cn/docx/abc)"));
+  assert.ok(content.includes("文档已存"));
+  await h.svc.stop();
+});
+
+test("未注入 hooks（插件路径）：URL 消息照常记为普通条目", async () => {
+  const h = await makeService();
+  await h.send(textMsg({ text: "https://example.com/plain", messageId: "om_plain" }));
+  await drain(h);
+  assert.ok(dayContent(h).includes("https://example.com/plain"));
+  assert.deepEqual(
+    h.client.reactions.map((r) => r.emoji),
+    ["OnIt", "DONE"],
+  );
   await h.svc.stop();
 });

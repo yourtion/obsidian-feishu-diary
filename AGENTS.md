@@ -155,9 +155,20 @@ release.yml + 无 environment，大小写敏感），provenance 自动生成。�
 管线与插件共用 service（测试保护），CLI 侧专项测试覆盖 fs 存储与配置解析。
 决策记录见 D9。
 
+**URL hooks + 富文本（2026-09-05）**：CLI 支持 `hooks.json`（默认 `<dir>/hooks.json`，
+`--hooks-file` / `FEISHU_HOOKS_FILE` 可改）——文本消息里的 URL 命中 match（正则）即
+分流：原文照常记日记、命令逐 URL 执行（spawn **无 shell**、URL 追加为末参、超时默认
+600s、stdout 截断 256KB）、stdout 追加进当天日记。hook 命令走**并发 lane** 不占串行
+队列（下载分钟级不堵「记一条」），两段落盘借队列保原子。service 经注入缝
+`hooks`/`hookRunner` 保持环境无关，插件不注入即无此路径（child_process 是插件审核
+红线），spawn 实现在 `node/hooks.ts`。触发面严格收窄：仅文本类消息 + classify 为
+note 的正文，「记：」逃生口/命令词/媒体不受影响。富文本 post 消息（链接分享的真身，
+飞书无独立 link 类型）同日支持：`channel.ts` 的 `flattenPost` 扁平化为 markdown
+（`a`→`[文字](href)`），post 从「没学会」变为正常记日记，插件同样受益。决策见 D11。
+
 待验证：P0-1 断线补推实验（决定要不要历史消息补拉模块）。
 
 待开发：CLI 的 init 扫码子命令（可选）；审核反馈跟进（getSettingDefinitions
 声明式设置迁移——1.13.0+ 设置搜索，非阻塞）；P0-1 结论若需补拉则加历史消息
-模块；Phase 4（语音气泡样式、撤回事件同步 im.message.recalled_v1、富文本消息、
-ASR 自配 OpenAI 兼容开关）。
+模块；Phase 4（语音气泡样式、撤回事件同步 im.message.recalled_v1、ASR 自配
+OpenAI 兼容开关）。

@@ -24,6 +24,7 @@ export const USAGE = `用法：feishu-diary [选项]
   --dir <path>             日记根目录，默认 ./FeishuDiary（env: FEISHU_DIARY_DIR）
   --state-file <path>      状态文件路径，默认 <dir>/.feishu-diary-state.json
                            （存认主/称呼/提醒状态；点开头，Obsidian 不索引）
+  --hooks-file <path>      URL hooks 配置，默认 <dir>/hooks.json（env: FEISHU_HOOKS_FILE）
 
 可选：
   --owner-open-id <id>     预设主人 open_id（env: FEISHU_OWNER_OPEN_ID）；
@@ -33,6 +34,16 @@ export const USAGE = `用法：feishu-diary [选项]
   --no-reminder            关闭每日提醒
   --env-file <path>        额外加载 .env 文件（KEY=VALUE，# 注释）
   -h, --help               显示本帮助
+
+URL hooks（可选；文件不存在即未启用，改后重启生效）：
+  hooks.json 定义「链接 → 命令」分流，如：
+    {"timeoutSec": 600, "hooks": [
+      {"match": "https?://[^/]*\\\\.feishu\\\\.cn/", "cmd": "feishu-dl --out /abs/path"},
+      {"match": "https?://([^/]*\\\\.)?example\\\\.com/podcast/", "cmd": "yt-dlp -x"}
+    ]}
+  文本消息里的 URL 命中 match（正则）时：原文照常记日记，随后执行 cmd
+  （URL 追加为最后一个参数；不经 shell，~ 不展开，路径写绝对路径），
+  stdout 追加进当天日记，非零退出/超时以文字消息回执。
 
 示例：
   FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=yyy npx feishu-diary --dir ~/diary
@@ -45,6 +56,8 @@ export interface CliOptions {
   dir: string;
   /** 状态文件（已解析为绝对路径）。 */
   stateFile: string;
+  /** URL hooks 配置文件（已解析为绝对路径；不存在即未启用）。 */
+  hooksFile: string;
   ownerOpenId: string | null;
   nickname: string;
   reminderEnabled: boolean;
@@ -90,6 +103,7 @@ export function resolveConfig(
       "app-secret": { type: "string" },
       dir: { type: "string" },
       "state-file": { type: "string" },
+      "hooks-file": { type: "string" },
       "owner-open-id": { type: "string" },
       nickname: { type: "string" },
       reminder: { type: "string" },
@@ -120,6 +134,9 @@ export function resolveConfig(
   const stateFile = path.resolve(
     pick("state-file", "FEISHU_STATE_FILE") ?? path.join(dir, ".feishu-diary-state.json"),
   );
+  const hooksFile = path.resolve(
+    pick("hooks-file", "FEISHU_HOOKS_FILE") ?? path.join(dir, "hooks.json"),
+  );
 
   const reminderTime = pick("reminder", "FEISHU_REMINDER_TIME") ?? DEFAULT_SETTINGS.reminderTime;
   if (!TIME_RE.test(reminderTime)) {
@@ -134,6 +151,7 @@ export function resolveConfig(
       appSecret: appSecret ?? "",
       dir,
       stateFile,
+      hooksFile,
       ownerOpenId: pick("owner-open-id", "FEISHU_OWNER_OPEN_ID") ?? null,
       nickname: arg("nickname") ?? "",
       reminderEnabled,

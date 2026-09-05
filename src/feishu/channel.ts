@@ -72,6 +72,12 @@ export function normalizeIncoming(raw: unknown): IncomingMessage | null {
     } catch {
       text = "";
     }
+  } else if (message.message_type === "post" || message.message_type === "rich_text") {
+    try {
+      text = flattenPost(message.content ?? "{}");
+    } catch {
+      text = "";
+    }
   }
 
   return {
@@ -84,6 +90,82 @@ export function normalizeIncoming(raw: unknown): IncomingMessage | null {
     content: message.content ?? "",
     text,
   };
+}
+
+/**
+ * 富文本（post）content → 扁平 markdown 文本。
+ * 接收事件结构为 {title, content: [[{tag…}]]}；发送 API 带语言键（zh_cn 等），
+ * 防御性兼容两者。畸形输入抛错，由调用方降级为空 text。
+ */
+export function flattenPost(raw: string): string {
+  const body = unwrapPostLocale(JSON.parse(raw) as unknown);
+  const title = typeof body.title === "string" && body.title ? body.title : "";
+  const lines: string[] = title ? [title] : [];
+
+  const legacy = body.content;
+  if (Array.isArray(legacy)) {
+    for (const row of legacy) {
+      if (!Array.isArray(row)) continue;
+      const line = row.map(renderPostNode).join("");
+      if (line) lines.push(line);
+    }
+  } else if (Array.isArray(body.content_v2)) {
+    // 新版结构：md 标签内即 markdown 文本
+    for (const row of body.content_v2) {
+      const nodes = Array.isArray(row) ? row : [row];
+      const line = nodes.map(renderPostNode).join("");
+      if (line) lines.push(line);
+    }
+  }
+  return lines.join("\n");
+}
+
+/** 取 {title, content} 主体：接收事件无语言键，发送 API 形如 {zh_cn: {…}}。 */
+function unwrapPostLocale(parsed: unknown): Record<string, unknown> {
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const obj = parsed as Record<string, unknown>;
+    if (Array.isArray(obj.content) || Array.isArray(obj.content_v2)) return obj;
+    for (const value of Object.values(obj)) {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const inner = value as Record<string, unknown>;
+        if (Array.isArray(inner.content) || Array.isArray(inner.content_v2)) return inner;
+      }
+    }
+  }
+  return {};
+}
+
+/** 单个富文本节点 → markdown 片段；未知 tag 输出空串。 */
+function renderPostNode(node: unknown): string {
+  if (!node || typeof node !== "object") return "";
+  const n = node as Record<string, unknown>;
+  const str = (key: string): string => {
+    const v = n[key];
+    return typeof v === "string" ? v : "";
+  };
+  switch (n.tag) {
+    case "text":
+    case "md":
+    case "code_block":
+      return str("text");
+    case "a": {
+      const text = str("text");
+      const href = str("href");
+      return text && href ? `[${text}](${href})` : text || href;
+    }
+    case "at":
+      return n.user_id === "all" ? "@所有人" : `@${str("user_name") || str("user_id")}`;
+    case "img":
+      return "[图片]";
+    case "media":
+      return "[视频]";
+    case "emotion":
+      return "[表情]";
+    case "hr":
+      return "---";
+    default:
+      return "";
+  }
 }
 
 export class FeishuChannel {

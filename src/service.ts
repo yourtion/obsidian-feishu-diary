@@ -15,6 +15,8 @@ import { EMOJI_DONE, EMOJI_DOING, FeishuClient } from "./feishu/client.ts";
 import type { FeishuCreds } from "./feishu/client.ts";
 import type { HttpApi } from "./feishu/http.ts";
 import { classify } from "./core/intents.ts";
+import { extractUrls, matchHooks } from "./core/urls.ts";
+import type { HookHit, UrlHookRule } from "./core/urls.ts";
 import { DiaryWriter, diaryPath } from "./core/writer.ts";
 import type { StorageAdapter } from "./core/writer.ts";
 import { attachmentBlock, attachmentPath } from "./core/attachments.ts";
@@ -36,6 +38,9 @@ const HELP_TEXT = [
 ].join("\n");
 
 const MEDIA_KINDS = ["image", "file", "audio", "media"];
+
+/** 文本类消息（text + 富文本 post/rich_text）——统一走意图识别与 URL hooks。 */
+const TEXTUAL_TYPES = ["text", "post", "rich_text"];
 
 // 定时器宿主：Obsidian 下取 window（popout 兼容），Node CLI 下取 globalThis。
 const timerApi: Pick<typeof globalThis, "setInterval" | "clearInterval"> =
@@ -76,6 +81,10 @@ export interface ServiceOptions {
   notify?: (message: string) => void;
   /** 通道状态上报（状态栏 / 控制台）。 */
   onStatus?: (status: string, detail?: string) => void;
+  /** URL hooks 规则（CLI 从 hooks.json 加载注入；插件不注入即无此路径）。 */
+  hooks?: readonly UrlHookRule[];
+  /** hook 命令执行器（CLI 侧 spawn 实现），返回 stdout；service 负责落盘与回执。 */
+  hookRunner?: (cmd: string, url: string) => Promise<string>;
   /** 测试注入缝：替换通道构造（默认真实 FeishuChannel）。 */
   channelFactory?: (
     creds: FeishuCreds,
@@ -189,14 +198,68 @@ export class FeishuDiaryService {
     // 意图分发（含附件下载等重活）异步执行：事件 handler 须 3 秒内返回，
     // 否则触发服务端超时重推（去重能兜住，但白白浪费）。
     // 链式队列保串行——并发 process（读-改-写）会竞态丢更新。
-    const task = this.queue.then(() => this.dispatchIntent(msg));
-    this.queue = task.catch((err) => {
+    const hookHits = this.findHookHits(msg);
+    if (hookHits) {
+      // URL hook 走并发 lane：命令可能跑数分钟，不占串行队列；两段落盘再借队列。
+      void this.runHookFlow(msg, hookHits).catch((err) => {
+        console.error("[feishu-diary] hook 处理失败:", err);
+      });
+      return;
+    }
+    this.runSerial(() => this.dispatchIntent(msg)).catch(() => undefined);
+  }
+
+  /** 串行尾链入队：保 process 读-改-写不并发；错误向调用方传播（queue 链自身已兜底）。 */
+  private runSerial(task: () => Promise<void>): Promise<void> {
+    const p = this.queue.then(task);
+    this.queue = p.catch((err) => {
       console.error("[feishu-diary] 消息处理失败:", err);
     });
+    return p;
+  }
+
+  /** hook 预检：仅文本类消息、仅 note 正文——逃生口/命令词/媒体消息不受影响。 */
+  private findHookHits(msg: IncomingMessage): HookHit[] | null {
+    const { hooks, hookRunner } = this.opts;
+    if (!hooks || hooks.length === 0 || !hookRunner) return null;
+    if (!TEXTUAL_TYPES.includes(msg.messageType)) return null;
+    if (classify(msg.text).kind !== "note") return null;
+    const hits = matchHooks(hooks, extractUrls(msg.text));
+    return hits.length > 0 ? hits : null;
+  }
+
+  /** URL hook 流程（并发 lane）：原文落盘 → 逐 URL 执行命令 → stdout 追加落盘。 */
+  private async runHookFlow(msg: IncomingMessage, hits: readonly HookHit[]): Promise<void> {
+    await this.withReceipt(
+      msg,
+      async () => {
+        await this.runSerial(async () => {
+          await this.writer?.append(msg.createTimeMs, msg.text);
+        });
+        for (const { rule, url } of hits) {
+          let stdout = "";
+          try {
+            stdout = (await this.opts.hookRunner?.(rule.cmd, url)) ?? "";
+          } catch (err) {
+            // 原文已先行落盘，失败信息里说明，避免「没存上」误导
+            throw new Error(
+              `${err instanceof Error ? err.message : String(err)}（原文已记入日记）`,
+            );
+          }
+          const trimmed = stdout.trim();
+          if (trimmed) {
+            await this.runSerial(async () => {
+              await this.writer?.append(msg.createTimeMs, trimmed);
+            });
+          }
+        }
+      },
+      "hook 失败：",
+    );
   }
 
   private async dispatchIntent(msg: IncomingMessage): Promise<void> {
-    if (msg.messageType !== "text") {
+    if (!TEXTUAL_TYPES.includes(msg.messageType)) {
       if (MEDIA_KINDS.includes(msg.messageType)) {
         await this.withReceipt(msg, () => this.handleMedia(msg));
       } else {
@@ -242,7 +305,7 @@ export class FeishuDiaryService {
         );
         return;
       case "help":
-        await this.reply(msg.senderOpenId, HELP_TEXT);
+        await this.reply(msg.senderOpenId, this.helpText());
         return;
       case "callme":
         this.opts.settings.nickname = intent.name;
@@ -333,8 +396,19 @@ export class FeishuDiaryService {
     }
   }
 
+  /** 帮助文案：注入了 hooks 时补一行（仅 CLI 会有）。 */
+  private helpText(): string {
+    return this.opts.hooks && this.opts.hooks.length > 0
+      ? `${HELP_TEXT}\n· 发链接命中 hooks 规则时，自动交给你的命令处理`
+      : HELP_TEXT;
+  }
+
   /** 表情两态回执：doing → 工作 → done。表情失败不阻塞主流程。 */
-  private async withReceipt(msg: IncomingMessage, work: () => Promise<void>): Promise<void> {
+  private async withReceipt(
+    msg: IncomingMessage,
+    work: () => Promise<void>,
+    failPrefix = "没存上：",
+  ): Promise<void> {
     let doingReactionId: string | null = null;
     try {
       doingReactionId = (await this.client?.addReaction(msg.messageId, EMOJI_DOING)) ?? null;
@@ -345,12 +419,12 @@ export class FeishuDiaryService {
       await work();
       this.resetReminderStreak();
     } catch (err) {
-      console.error("[feishu-diary] 写入失败:", err);
+      console.error("[feishu-diary] 消息处理失败:", err);
       // 失败也要摘掉执行中表情（两态回执约定），失败状态由文字回执表达
       await this.removeDoingReaction(msg.messageId, doingReactionId);
       await this.reply(
         msg.senderOpenId,
-        `没存上：${err instanceof Error ? err.message : String(err)}`,
+        `${failPrefix}${err instanceof Error ? err.message : String(err)}`,
       );
       return;
     }

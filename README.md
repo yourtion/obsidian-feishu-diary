@@ -52,6 +52,7 @@ Run `npx feishu-diary --help` for the full option list. Notes:
 - Files land in `<dir>/YYYY/YYYY-MM-DD.md` with the same data contract as the plugin (append-only, atomic writes, attachments under `<dir>/attachments/`)
 - Runtime state (owner binding, nickname, reminder state) lives in `<dir>/.feishu-diary-state.json` — back up the directory and you've backed up everything
 - Recalled entries move to `<dir>/.trash/` (recoverable) instead of the system trash
+- **URL hooks** (CLI only): drop a `hooks.json` next to your diary and matching links get routed to your own commands — the original message still lands in the diary, each matched URL runs your command (URL appended as the last argument, no shell), and the command's stdout is appended to the day's file. Podcast downloads, doc archiving, whatever you script. See `--help` for the file format
 - ⚠️ One app, one client: if the Obsidian plugin and the CLI connect with the same app credentials at the same time, Feishu delivers each event to a random one of them. Don't run both against the same app.
 
 Requires Node.js ≥ 18.
@@ -91,6 +92,7 @@ FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=yyy npx feishu-diary --dir ~/diary
 
 - 数据契约与插件完全一致；运行状态（认主/称呼/提醒）存 `<dir>/.feishu-diary-state.json`
 - 撤回的条目移入 `<dir>/.trash/`（可恢复），不走系统废纸篓
+- **URL hooks（仅 CLI）**：在日记目录放 `hooks.json`，命中规则的链接自动交给自定义命令处理——原文照常记日记，命令 stdout 追加进当天日记（URL 作为命令最后一个参数，不经 shell）；配置格式见 `npx feishu-diary --help`
 - ⚠️ 同一应用凭据勿与 Obsidian 插件同时在线（飞书会把事件随机推给其中一个客户端）
 - 要求 Node.js ≥ 18，完整参数见 `npx feishu-diary --help`
 

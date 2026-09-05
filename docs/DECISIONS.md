@@ -71,6 +71,18 @@ Ogg/Opus 直存（Obsidian 可直接播）；飞书官方 ASR 是设置开关而
 - **扫码创建成功自动开闸**（`applyScanResult`）：扫码是明确的启用动作，不开闸新用户会以为坏了。手动改凭据不自动开——开关是唯一总闸，`restartChannel` 关闸时不建连。
 - **CLI 无此开关**：进程显式启动即显式启用，无「装了但不想跑」状态。
 
+## D11 · URL hooks：特定链接交给自定义命令，仅 CLI（2026-09-05 补）
+
+**背景**：想让特定 URL（飞书文档、播客链接）走定制流程（解析/下载/转换）而非直接记日记。结论：这套能力只做在 CLI，插件保留纯日记管线。
+
+- **仅 CLI，插件不做**：插件跑在 Electron renderer，`child_process` 是社区审核红线，移动端干脆没有子进程。插件侧要做的只能是「内置 handler + 参数」（如 ASR 走 HTTP），用户命令永远进不去。
+- **配置走 hooks.json**（默认 `<dir>/hooks.json`，`--hooks-file` / `FEISHU_HOOKS_FILE` 可改；文件不存在即未启用，坏配置启动即退出）：`{"timeoutSec": 600, "hooks": [{match: 正则, cmd: 命令行}]}`。数组结构 env 表达不了，文件好编辑好排版。
+- **注入缝保持 service 环境无关**：`ServiceOptions` 加 `hooks`（规则数组）+ `hookRunner`（执行器），spawn 实现在 `node/hooks.ts`（不进 main.js）；插件不注入即无此代码路径。匹配纯函数在 `core/urls.ts`（extractUrls/matchHooks）。
+- **触发语义严格收窄**：仅文本类消息（text/post/rich_text）、仅 `classify` 判为 note 的正文——「记：」逃生口、命令词、媒体消息不受影响，hook 无法误吞。命中即分流：**原文照常记日记 + 逐命中 URL 执行命令 + stdout（非空）追加进当天日记**（留痕拍板：原文与 stdout 都记——链接有溯源价值，日记完整性优先）。
+- **并发 lane**：hook 命令可能跑数分钟（播客下载），不占串行队列（否则堵住后续「记一条」）；只有两段日记落盘借队列，保 `process` 读-改-写原子。回执复用两态表情（OnIt 盖全程→DONE）；失败摘 OnIt + 文字回执，注明「原文已记入日记」避免「没存上」误导。
+- **spawn 无 shell**：cmd 引号感知 tokenize 后 `spawn(bin, [...args, url])`，URL 追加为最后一个参数——单 argv 传递，无注入/断词风险；也因此 `~` 与通配符不展开，路径须写绝对路径（--help 已注明）。超时默认 600s（timeoutSec 可调）SIGTERM；stdout 截断 256KB。
+- **顺带：富文本 post 解析**（两宿主共用，无子进程）：飞书无独立 "link" 消息类型——分享/富文本链接的真身是 `message_type: "post"`，content 为 `{title, content: [[{tag…}]]}`。`channel.ts` 的 `flattenPost` 扁平化为 markdown（`a`→`[文字](href)`，日记里天然可点），post 从「这类消息我还没学会」变为正常记日记 + 可触发 hook。
+
 ## 技术栈与架构约定
 
 - TS strict + oxlint + oxfmt + esbuild + node:test（Node 原生 type-stripping 跑测试，零测试框架依赖）

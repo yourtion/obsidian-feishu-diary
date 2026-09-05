@@ -44,6 +44,25 @@ test("dir 相对路径按 cwd 解析为绝对路径；state-file 默认落在 di
   );
 });
 
+test("hooks-file：默认 <dir>/hooks.json，args > env 覆盖", () => {
+  const def = resolveConfig(["--app-id", "a", "--app-secret", "s", "--dir", "/tmp/d"], {});
+  assert.ok(def.config);
+  assert.equal(def.config.hooksFile, path.join("/tmp/d", "hooks.json"));
+
+  const fromEnv = resolveConfig(["--app-id", "a", "--app-secret", "s"], {
+    FEISHU_HOOKS_FILE: "/tmp/env-hooks.json",
+  });
+  assert.ok(fromEnv.config);
+  assert.equal(fromEnv.config.hooksFile, "/tmp/env-hooks.json");
+
+  const fromArg = resolveConfig(
+    ["--app-id", "a", "--app-secret", "s", "--hooks-file", "/tmp/arg-hooks.json"],
+    { FEISHU_HOOKS_FILE: "/tmp/env-hooks.json" },
+  );
+  assert.ok(fromArg.config);
+  assert.equal(fromArg.config.hooksFile, "/tmp/arg-hooks.json");
+});
+
 test("提醒时间格式校验与开关", () => {
   assert.throws(
     () => resolveConfig(["--app-id", "a", "--app-secret", "s", "--reminder", "25:00"], {}),
