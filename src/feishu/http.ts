@@ -48,15 +48,41 @@ function parseBody(text: string): unknown {
   }
 }
 
+/** JSON/form 请求超时；requestUrl 不支持中止，超时仅解除调用方阻塞（底层请求继续）。 */
+const JSON_TIMEOUT_MS = 15_000;
+/** 二进制下载超时（附件可达数十 MB，放宽窗口）。 */
+const BINARY_TIMEOUT_MS = 120_000;
+
+/** 竞速超时：到点 reject，防止 requestUrl 挂起永久阻塞调用方。 */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(`${label} 超时（${ms}ms）`)), ms);
+    p.then(
+      (v) => {
+        window.clearTimeout(timer);
+        resolve(v);
+      },
+      (err: unknown) => {
+        window.clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
 /** POST form-urlencoded（飞书设备授权流用）。非 2xx 不抛，由调用方按 data.error 判定。 */
 export async function postForm(url: string, params: Record<string, string>): Promise<HttpResponse> {
-  const res = await requestUrl({
-    url,
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(params).toString(),
-    throw: false,
-  });
+  const res = await withTimeout(
+    requestUrl({
+      url,
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params).toString(),
+      throw: false,
+    }),
+    JSON_TIMEOUT_MS,
+    `POST ${url}`,
+  );
   return { status: res.status, data: parseBody(res.text) };
 }
 
@@ -75,18 +101,22 @@ export async function requestJson(
     ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
     throw: false,
   };
-  const res = await requestUrl(param);
+  const res = await withTimeout(requestUrl(param), JSON_TIMEOUT_MS, `${method} ${url}`);
   return { status: res.status, data: parseBody(res.text) };
 }
 
 /** 二进制下载（消息资源）。非 2xx 时 buffer 为空、text 携带错误响应。 */
 export async function requestBinary(url: string, token: string): Promise<BinaryResponse> {
-  const res = await requestUrl({
-    url,
-    method: "GET",
-    headers: { Authorization: `Bearer ${token}` },
-    throw: false,
-  });
+  const res = await withTimeout(
+    requestUrl({
+      url,
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+      throw: false,
+    }),
+    BINARY_TIMEOUT_MS,
+    `GET ${url}`,
+  );
   return {
     status: res.status,
     buffer: res.arrayBuffer,
@@ -120,7 +150,7 @@ export function createObsidianHttpInstance(): HttpInstance {
         : {}),
       throw: false,
     };
-    const res = await requestUrl(param);
+    const res = await withTimeout(requestUrl(param), JSON_TIMEOUT_MS, `${param.method} ${url}`);
     return parseBody(res.text) as T;
   };
   const withMethod =

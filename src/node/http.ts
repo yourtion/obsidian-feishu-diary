@@ -16,12 +16,18 @@ function parseBody(text: string): unknown {
   }
 }
 
+/** JSON/form 请求超时：挂起的请求中止，防编排层被单个请求永久阻塞。 */
+const JSON_TIMEOUT_MS = 15_000;
+/** 二进制下载超时：放宽（附件可达数十 MB，慢网也要给足窗口）。 */
+const BINARY_TIMEOUT_MS = 120_000;
+
 /** POST form-urlencoded（与 obsidian 版语义一致：非 2xx 不抛，调用方按 data.error 判定）。 */
 async function postForm(url: string, params: Record<string, string>): Promise<HttpResponse> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(params).toString(),
+    signal: AbortSignal.timeout(JSON_TIMEOUT_MS),
   });
   return { status: res.status, data: parseBody(await res.text()) };
 }
@@ -38,6 +44,7 @@ async function requestJson(
     method,
     headers,
     ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+    signal: AbortSignal.timeout(JSON_TIMEOUT_MS),
   });
   return { status: res.status, data: parseBody(await res.text()) };
 }
@@ -48,7 +55,10 @@ async function requestJson(
  * 调用方只在非 2xx 时消费 text）。
  */
 async function requestBinary(url: string, token: string): Promise<BinaryResponse> {
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(BINARY_TIMEOUT_MS),
+  });
   const contentType = res.headers.get("content-type");
   if (res.status >= 200 && res.status < 300) {
     return { status: res.status, buffer: await res.arrayBuffer(), contentType, text: "" };
@@ -80,6 +90,7 @@ export function createNodeHttpInstance(): HttpInstance {
       ...(hasBody
         ? { body: typeof opts.data === "string" ? opts.data : JSON.stringify(opts.data) }
         : {}),
+      signal: AbortSignal.timeout(JSON_TIMEOUT_MS),
     });
     return parseBody(await res.text()) as T;
   };
