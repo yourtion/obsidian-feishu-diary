@@ -9,13 +9,14 @@
 import type { BinaryResponse, HttpApi, HttpResponse } from "./http.ts";
 
 export class FeishuApiError extends Error {
-  constructor(
-    public readonly httpStatus: number,
-    public readonly code: number,
-    msg: string,
-  ) {
+  readonly httpStatus: number;
+  readonly code: number;
+
+  constructor(httpStatus: number, code: number, msg: string) {
     super(`feishu api error: HTTP ${httpStatus} code=${code} ${msg}`);
     this.name = "FeishuApiError";
+    this.httpStatus = httpStatus;
+    this.code = code;
   }
 }
 
@@ -31,6 +32,8 @@ export interface FeishuCreds {
 
 export class FeishuClient {
   private tokenCache: TokenCache | null = null;
+  /** 单飞：并发未命中时共享同一次取 token 请求，不重复打接口。 */
+  private tokenPromise: Promise<string> | null = null;
   private readonly creds: FeishuCreds;
   private readonly http: HttpApi;
 
@@ -39,8 +42,19 @@ export class FeishuClient {
     this.http = http;
   }
 
-  private async tenantAccessToken(): Promise<string> {
-    if (this.tokenCache && Date.now() < this.tokenCache.expireAt) return this.tokenCache.token;
+  private tenantAccessToken(): Promise<string> {
+    if (this.tokenCache && Date.now() < this.tokenCache.expireAt) {
+      return Promise.resolve(this.tokenCache.token);
+    }
+    if (!this.tokenPromise) {
+      this.tokenPromise = this.fetchToken().finally(() => {
+        this.tokenPromise = null;
+      });
+    }
+    return this.tokenPromise;
+  }
+
+  private async fetchToken(): Promise<string> {
     const res = await this.http.requestJson(
       "POST",
       "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
@@ -66,17 +80,28 @@ export class FeishuClient {
     return this.tokenCache.token;
   }
 
+  /** 响应是否为 token 失效（HTTP 401，或飞书 99991663/99991679：token 不存在/无效）。 */
+  private isStaleToken(status: number, code: number | undefined): boolean {
+    return status === 401 || code === 99991663 || code === 99991679;
+  }
+
   private async request(
     path: string,
     method: "POST" | "DELETE",
     body?: unknown,
   ): Promise<HttpResponse> {
-    const token = await this.tenantAccessToken();
-    const res = await this.http.requestJson(method, `https://open.feishu.cn${path}`, {
-      token,
-      body,
-    });
-    const data = res.data as { code?: number; msg?: string };
+    const doRequest = async (): Promise<HttpResponse> => {
+      const token = await this.tenantAccessToken();
+      return this.http.requestJson(method, `https://open.feishu.cn${path}`, { token, body });
+    };
+    let res = await doRequest();
+    let data = res.data as { code?: number; msg?: string };
+    // token 提前失效：作废缓存取新 token 重试一次
+    if (this.isStaleToken(res.status, data.code)) {
+      this.tokenCache = null;
+      res = await doRequest();
+      data = res.data as { code?: number; msg?: string };
+    }
     if (!judgeOk(res) || data.code !== 0) {
       throw new FeishuApiError(res.status, data.code ?? -1, data.msg ?? String(res.data));
     }
@@ -113,11 +138,17 @@ export class FeishuClient {
     fileKey: string,
     type: "image" | "file",
   ): Promise<{ buffer: ArrayBuffer; contentType: string | null }> {
-    const token = await this.tenantAccessToken();
-    const res: BinaryResponse = await this.http.requestBinary(
-      `https://open.feishu.cn/open-apis/im/v1/messages/${messageId}/resources/${fileKey}?type=${type}`,
-      token,
-    );
+    const url = `https://open.feishu.cn/open-apis/im/v1/messages/${messageId}/resources/${fileKey}?type=${type}`;
+    const doDownload = async (): Promise<BinaryResponse> => {
+      const token = await this.tenantAccessToken();
+      return this.http.requestBinary(url, token);
+    };
+    let res = await doDownload();
+    if (res.status === 401) {
+      // token 提前失效：作废缓存取新 token 重试一次
+      this.tokenCache = null;
+      res = await doDownload();
+    }
     if (res.status < 200 || res.status >= 300 || res.buffer.byteLength === 0) {
       const err = parseBody(res.text) as { code?: number; msg?: string };
       throw new FeishuApiError(res.status, err.code ?? -1, err.msg ?? res.text.slice(0, 120));
