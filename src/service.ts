@@ -41,6 +41,24 @@ const MEDIA_KINDS = ["image", "file", "audio", "media"];
 const timerApi: Pick<typeof globalThis, "setInterval" | "clearInterval"> =
   typeof window !== "undefined" ? window : globalThis;
 
+/** service 依赖的最小通道面（FeishuChannel 天然满足；测试可注入替身）。 */
+export interface ChannelLike {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+}
+
+/** service 依赖的最小客户端面（FeishuClient 天然满足；测试可注入替身）。 */
+export interface ClientLike {
+  sendText(openId: string, text: string): Promise<void>;
+  addReaction(messageId: string, emojiType: string): Promise<string>;
+  removeReaction(messageId: string, reactionId: string): Promise<void>;
+  downloadResource(
+    messageId: string,
+    fileKey: string,
+    type: "image" | "file",
+  ): Promise<{ buffer: ArrayBuffer; contentType: string | null }>;
+}
+
 export interface ServiceOptions {
   /** 飞书应用凭据；restart(creds) 可更新（扫码建应用成功后）。 */
   creds: FeishuCreds;
@@ -58,11 +76,20 @@ export interface ServiceOptions {
   notify?: (message: string) => void;
   /** 通道状态上报（状态栏 / 控制台）。 */
   onStatus?: (status: string, detail?: string) => void;
+  /** 测试注入缝：替换通道构造（默认真实 FeishuChannel）。 */
+  channelFactory?: (
+    creds: FeishuCreds,
+    httpInstance: HttpInstance,
+    onMessage: (msg: IncomingMessage) => Promise<void> | void,
+    onStatus: (status: string, detail?: string) => void,
+  ) => ChannelLike;
+  /** 测试注入缝：替换客户端构造（默认真实 FeishuClient）。 */
+  clientFactory?: (creds: FeishuCreds, http: HttpApi) => ClientLike;
 }
 
 export class FeishuDiaryService {
-  private channel: FeishuChannel | null = null;
-  private client: FeishuClient | null = null;
+  private channel: ChannelLike | null = null;
+  private client: ClientLike | null = null;
   private writer: DiaryWriter | null = null;
   private readonly deduper = new MessageDeduper();
   /** 消息处理串行队列（尾链）：handler 3 秒内返回 + process 读-改-写不并发。 */
@@ -84,14 +111,23 @@ export class FeishuDiaryService {
       this.reportStatus("未配置");
       return;
     }
-    this.client = new FeishuClient(creds, http);
+    this.client = this.opts.clientFactory
+      ? this.opts.clientFactory(creds, http)
+      : new FeishuClient(creds, http);
     this.writer = new DiaryWriter(storage, this.opts.settings.rootDir);
-    this.channel = new FeishuChannel(
-      creds,
-      httpInstance,
-      (msg) => this.handleMessage(msg),
-      (s, d) => this.reportStatus(s, d),
-    );
+    this.channel = this.opts.channelFactory
+      ? this.opts.channelFactory(
+          creds,
+          httpInstance,
+          (msg) => this.handleMessage(msg),
+          (s, d) => this.reportStatus(s, d),
+        )
+      : new FeishuChannel(
+          creds,
+          httpInstance,
+          (msg) => this.handleMessage(msg),
+          (s, d) => this.reportStatus(s, d),
+        );
     try {
       await this.channel.start();
     } catch (err) {
@@ -226,7 +262,7 @@ export class FeishuDiaryService {
     if (!client || !writer) throw new Error("服务未完成初始化，请重启");
 
     const kind = msg.messageType as MediaKind;
-    const content = JSON.parse(msg.content || "{}") as Record<string, unknown>;
+    const content = parseContentJson(msg.content);
 
     // image 消息只有 image_key；audio/file/media 用 file_key（media 的封面图略过）。
     const rawKey = kind === "image" ? content.image_key : content.file_key;
@@ -342,5 +378,17 @@ export class FeishuDiaryService {
     } catch (err) {
       console.error("[feishu-diary] 回复失败:", err);
     }
+  }
+}
+
+/** 媒体消息 content 解析；畸形 JSON 转为可读错误（withReceipt 会转成文字回执）。 */
+function parseContentJson(raw: string): Record<string, unknown> {
+  const empty = raw.trim().length === 0;
+  if (empty) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    throw new Error("消息内容不是合法 JSON，无法提取附件");
   }
 }
