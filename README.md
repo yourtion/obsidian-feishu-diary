@@ -55,7 +55,7 @@ npx feishu-diary --app-id cli_xxx --app-secret yyy --dir ~/diary
 FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=yyy npx feishu-diary --dir ~/diary
 ```
 
-Run `npx feishu-diary --help` for the full option list. Notes:
+Run `npx feishu-diary --help` for the full option list; the config file fields and URL hooks are documented in [docs/config.md](docs/config.md). Notes:
 
 - Files land in `<dir>/YYYY/YYYY-MM-DD.md` with the same data contract as the plugin (append-only, atomic writes, attachments under `<dir>/attachments/`)
 - Runtime state (owner binding, nickname, reminder state) lives in `<dir>/.feishu-diary-state.json` — back up the directory and you've backed up everything
@@ -111,6 +111,7 @@ FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=yyy npx feishu-diary --dir ~/diary
 - **URL hooks（仅 CLI）**：写在配置文件 `"hooks"` 字段或日记目录的 `hooks.json`——命中规则的链接自动交给自定义命令处理，原文照常记日记，命令 stdout 追加进当天日记（URL 作为命令最后一个参数，不经 shell）；配置格式见 `npx feishu-diary --help`
 - macOS 开机自启：[docs/autostart-macos.md](docs/autostart-macos.md)（launchd 配置模板）
 - ⚠️ 同一应用凭据勿与 Obsidian 插件同时在线（飞书会把事件随机推给其中一个客户端）
+- 配置文件与 URL hooks 完整用法：[docs/config.md](docs/config.md)
 - 要求 Node.js ≥ 18，完整参数见 `npx feishu-diary --help`
 
 ## License

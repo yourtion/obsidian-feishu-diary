@@ -134,7 +134,7 @@ export async function runInit(argv: string[]): Promise<void> {
     console.log(`     「应用发布」→「版本管理与发布」→ 创建版本并发布`);
     console.log(`  2. 启动：feishu-diary（读同一配置文件，无需参数）`);
     console.log(`  3. 用飞书给机器人发条消息试试`);
-    console.log(`  4. URL hooks（可选）：在配置文件加 "hooks" 字段，格式见 feishu-diary --help`);
+    console.log(`  4. URL hooks（可选）：在配置文件加 "hooks" 字段，用法见 ${DOCS_BASE}/config.md`);
     console.log(`  5. 开机自启（可选，macOS launchd）：${DOCS_BASE}/autostart-macos.md`);
   } catch (err) {
     if (err instanceof Error && (err.message === "abort" || err.name === "AbortError")) {

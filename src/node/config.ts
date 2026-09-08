@@ -65,6 +65,8 @@ URL hooks（可选；「链接 → 命令」分流，改后重启生效）：
   FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=yyy npx feishu-diary --dir ~/diary
   npx feishu-diary --env-file ./feishu.env --dir ~/diary
 
+配置文件与 URL hooks 的完整用法见 docs/config.md（或
+https://github.com/yourtion/obsidian-feishu-diary/blob/main/docs/config.md）；
 开机自启（macOS launchd）见 docs/autostart-macos.md。`;
 
 export interface CliOptions {

@@ -179,7 +179,9 @@ note 的正文，「记：」逃生口/命令词/媒体不受影响。富文本 
 可内联进配置文件（`hooks` 字段，显式 `--hooks-file` 时失效）或沿用 hooks.json。发布
 应用仍需手动（init 收尾给直达链接）。macOS 自启动不集成代码，文档
 `docs/autostart-macos.md`（launchd plist 模板 + bootstrap/bootout + nvm 路径坑）。
-决策见 D12。
+配置文件与 URL hooks 的用户文档在 `docs/config.md`（USAGE/README/init 收尾均指向
+它；含「CLI --env-file 不注入 process.env、hook 凭据须走 Node 原生 --env-file 或
+export」的坑）。决策见 D12。
 
 待验证：P0-1 断线补推实验（决定要不要历史消息补拉模块）。
 
