@@ -1,6 +1,6 @@
 {
   "name": "feishu-diary",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Talk to a Feishu bot, and it lands in your Obsidian vault (or any local dir via the npx CLI) as a diary.",
   "keywords": [
     "cli",
