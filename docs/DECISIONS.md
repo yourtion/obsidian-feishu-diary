@@ -83,6 +83,16 @@ Ogg/Opus 直存（Obsidian 可直接播）；飞书官方 ASR 是设置开关而
 - **spawn 无 shell**：cmd 引号感知 tokenize 后 `spawn(bin, [...args, url])`，URL 追加为最后一个参数——单 argv 传递，无注入/断词风险；也因此 `~` 与通配符不展开，路径须写绝对路径（--help 已注明）。超时默认 600s（timeoutSec 可调）SIGTERM；stdout 截断 256KB。
 - **顺带：富文本 post 解析**（两宿主共用，无子进程）：飞书无独立 "link" 消息类型——分享/富文本链接的真身是 `message_type: "post"`，content 为 `{title, content: [[{tag…}]]}`。`channel.ts` 的 `flattenPost` 扁平化为 markdown（`a`→`[文字](href)`，日记里天然可点），post 从「这类消息我还没学会」变为正常记日记 + 可触发 hook。
 
+## D12 · CLI init 子命令 + 配置文件 `~/.feishu-diary.json`（2026-09-08）
+
+**背景**：CLI 首次使用门槛高——手建应用、手写 env/参数、hooks 又是另一个文件。`feishu-diary init` 扫码建应用一步生成配置，之后 `feishu-diary` 零参数启动。macOS 自启动讨论后决定文档化、不集成。
+
+- **配置文件 `~/.feishu-diary.json`**（`--config` / `FEISHU_DIARY_CONFIG` 可改路径）：init 的产物，含凭据/dir/ownerOpenId/nickname/提醒设置 + 内联 hooks。优先级 **args > env > 配置文件 > 默认**——文件是最弱一层，显式给的总能覆盖，现有 env/flag 用法零影响。坏配置启动即退出（凭据在里面，静默降级到默认值会写错目录）。
+- **凭据明文 + chmod 600**：CLI 是本机自用工具，无 Obsidian 的环境没有 SecretStorage 同级的标准 keychain 位；明文 + 600 是 npx 工具惯例（`~/.aws/credentials` 同款）。备份为 `.bak` 时权限随 rename 保留。
+- **hooks 双形态并存**：配置文件内联 `hooks` 字段（新——init 后一个文件管全部）与独立 hooks.json（D11 现状，向后兼容）；显式 `--hooks-file` / `FEISHU_HOOKS_FILE` 时内联失效，否则内联优先于默认 `<dir>/hooks.json`。校验同源（`parseHooksObject`，文件版只是套了层 JSON.parse）。
+- **init 复用插件扫码实现**：`createAppByScan` 补 `HttpApi` 注入参数 + timerApi shim 后，register.ts 不再传递依赖 obsidian——插件（requestUrl）与 CLI（fetch）共用同一设备流实现（取代 p0:init 里 SDK registerApp 的并行实现）。扫码者 open_id 预填进配置文件（同插件 `applyScanResult` 语义）。终端二维码用 qrcode 核心生成器矩阵自绘半块字符（与插件侧 qrcode-svg 同源，顶层 API 会把 pngjs 拉进 bundle）。发布新版本仍需用户手动（API 涉及审核流），init 收尾输出直达链接。
+- **自启动不集成，文档化**（`docs/autostart-macos.md`）：launchd 的路径硬约束（不继承 shell PATH、`~` 不展开、nvm 版本化路径每升版就变）使代码自动探测反而脆；一份可按机器微调的 plist 模板 + bootstrap/bootout 命令是更稳的形态，CLI 零增重。
+
 ## 技术栈与架构约定
 
 - TS strict + oxlint + oxfmt + esbuild + node:test（Node 原生 type-stripping 跑测试，零测试框架依赖）

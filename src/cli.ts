@@ -1,44 +1,64 @@
 /**
  * feishu-diary CLI 入口——无 Obsidian 环境的常驻服务（npx feishu-diary）。
  *
- * 装配：env/args 配置 + Node fs 存储 + fetch HTTP → FeishuDiaryService（service.ts，
- * 与插件共用编排）。SIGINT/SIGTERM 优雅退出。用法见 --help（USAGE 在 node/config.ts）。
+ * 装配：配置文件/env/args 配置 + Node fs 存储 + fetch HTTP → FeishuDiaryService
+ * （service.ts，与插件共用编排）。SIGINT/SIGTERM 优雅退出。init 子命令生成配置文件
+ * （node/init.ts）。用法见 --help（USAGE 在 node/config.ts）。
  */
 import process from "node:process";
 import { readFile } from "node:fs/promises";
+import * as path from "node:path";
 import { parseArgs } from "node:util";
 import { FeishuDiaryService } from "./service.ts";
 import { channelStatusLabel } from "./feishu/channel.ts";
 import { createNodeHttpInstance, nodeHttp } from "./node/http.ts";
 import { NodeFsVaultAdapter } from "./node/vault.ts";
 import { loadHooks, runShellHook } from "./node/hooks.ts";
+import { runInit } from "./node/init.ts";
 import {
   USAGE,
   buildSettings,
+  defaultConfigFile,
   loadState,
   parseEnvFile,
+  readConfigFile,
   resolveConfig,
   saveState,
+  type FileConfig,
 } from "./node/config.ts";
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+  if (argv[0] === "init") {
+    await runInit(argv.slice(1));
+    return;
+  }
   const env: Record<string, string | undefined> = { ...process.env };
 
-  // --env-file 需要先于正式解析注入（不 strict 轻取一次，避免重复定义参数表）。
+  // --env-file / --config 需要先于正式解析注入（不 strict 轻取一次，避免重复定义参数表）。
   const { values: peek } = parseArgs({
     args: argv,
-    options: { "env-file": { type: "string" } },
+    options: { "env-file": { type: "string" }, config: { type: "string" } },
     strict: false,
   });
   const envFile = typeof peek["env-file"] === "string" ? peek["env-file"] : undefined;
   if (envFile) {
     Object.assign(env, parseEnvFile(await readFile(envFile, "utf8")));
   }
+  const configArg = typeof peek.config === "string" ? peek.config : undefined;
+  const configFile = path.resolve(configArg ?? env["FEISHU_DIARY_CONFIG"] ?? defaultConfigFile());
+
+  let fileConfig: FileConfig | null = null;
+  try {
+    fileConfig = await readConfigFile(configFile);
+  } catch (err) {
+    console.error(`\n配置文件错误：${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(2);
+  }
 
   let resolution;
   try {
-    resolution = resolveConfig(argv, env);
+    resolution = resolveConfig(argv, env, fileConfig);
   } catch (err) {
     console.error(`\n配置错误：${err instanceof Error ? err.message : String(err)}\n`);
     console.error(USAGE);
@@ -51,13 +71,16 @@ async function main(): Promise<void> {
   const config = resolution.config;
   if (!config) return;
 
-  // hooks.json 坏配置直接退出（配置错误不该带病启动）；不存在 = 未启用。
-  let hooks;
-  try {
-    hooks = await loadHooks(config.hooksFile);
-  } catch (err) {
-    console.error(`\nhooks 配置错误：${err instanceof Error ? err.message : String(err)}\n`);
-    process.exit(2);
+  // hooks：配置文件内联优先（resolveConfig 已定），否则读 hooks 文件；
+  // 坏配置直接退出（配置错误不该带病启动）；文件不存在 = 未启用。
+  let hooks = config.hooksInline;
+  if (!hooks) {
+    try {
+      hooks = await loadHooks(config.hooksFile);
+    } catch (err) {
+      console.error(`\nhooks 配置错误：${err instanceof Error ? err.message : String(err)}\n`);
+      process.exit(2);
+    }
   }
 
   const state = await loadState(config.stateFile);
@@ -91,7 +114,7 @@ async function main(): Promise<void> {
   console.log(`  提醒：${settings.reminderEnabled ? `${settings.reminderTime}（东八区）` : "关"}`);
   console.log(`  状态文件：${config.stateFile}`);
   console.log(
-    `  URL hooks：${hooks.rules.length > 0 ? `${hooks.rules.length} 条（${config.hooksFile}，超时 ${Math.round(hooks.timeoutMs / 1000)}s）` : "未启用"}`,
+    `  URL hooks：${hooks.rules.length > 0 ? `${hooks.rules.length} 条（${config.hooksInline ? "配置文件内联" : config.hooksFile}，超时 ${Math.round(hooks.timeoutMs / 1000)}s）` : "未启用"}`,
   );
 
   await service.start();

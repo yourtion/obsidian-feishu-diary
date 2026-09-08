@@ -8,6 +8,7 @@ import { Modal, Notice } from "obsidian";
 import type { App } from "obsidian";
 import { qrSvgDataUri } from "../util/qrcode-svg.ts";
 import { createAppByScan } from "../feishu/register.ts";
+import { obsidianHttp } from "../feishu/http.ts";
 
 export interface ScanResult {
   appId: string;
@@ -56,6 +57,7 @@ export class ScanSetupModal extends Modal {
   private async run(qrEl: HTMLElement, linkEl: HTMLElement): Promise<void> {
     try {
       const result = await createAppByScan(
+        obsidianHttp,
         {
           onQRCodeReady: ({ url, expireInSeconds }) => {
             this.renderQr(qrEl, url);

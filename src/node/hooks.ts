@@ -69,6 +69,38 @@ export interface LoadedHooks {
   timeoutMs: number;
 }
 
+/** 解析并校验 hooks 配置对象（hooks.json 文本与配置文件内联字段共用）；source 只用于错误文案。 */
+export function parseHooksObject(raw: unknown, source = "hooks.json"): LoadedHooks {
+  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const list = obj.hooks;
+  if (!Array.isArray(list)) throw new Error(`${source} 缺少 "hooks" 数组`);
+
+  const rules: UrlHookRule[] = [];
+  for (const [i, entry] of list.entries()) {
+    const item = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+    const match = item.match;
+    const cmd = item.cmd;
+    if (typeof match !== "string" || match.length === 0) {
+      throw new Error(`${source} 第 ${i + 1} 条缺少非空 match`);
+    }
+    if (typeof cmd !== "string" || cmd.length === 0) {
+      throw new Error(`${source} 第 ${i + 1} 条缺少非空 cmd`);
+    }
+    try {
+      rules.push({ match: new RegExp(match), cmd });
+    } catch {
+      throw new Error(`${source} 第 ${i + 1} 条 match 不是合法正则：${match}`);
+    }
+  }
+
+  const timeoutSec = obj.timeoutSec;
+  const timeoutMs = timeoutSec === undefined ? DEFAULT_HOOK_TIMEOUT_MS : Number(timeoutSec) * 1000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`${source} timeoutSec 应为正数（秒），收到：${String(timeoutSec)}`);
+  }
+  return { rules, timeoutMs };
+}
+
 /** 解析并校验 hooks.json 文本；任何配置错误抛 Error（信息含修复指引）。 */
 export function parseHooksFile(json: string): LoadedHooks {
   let raw: unknown;
@@ -77,34 +109,7 @@ export function parseHooksFile(json: string): LoadedHooks {
   } catch {
     throw new Error("hooks.json 不是合法 JSON");
   }
-  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const list = obj.hooks;
-  if (!Array.isArray(list)) throw new Error('hooks.json 缺少 "hooks" 数组');
-
-  const rules: UrlHookRule[] = [];
-  for (const [i, entry] of list.entries()) {
-    const item = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
-    const match = item.match;
-    const cmd = item.cmd;
-    if (typeof match !== "string" || match.length === 0) {
-      throw new Error(`hooks.json 第 ${i + 1} 条缺少非空 match`);
-    }
-    if (typeof cmd !== "string" || cmd.length === 0) {
-      throw new Error(`hooks.json 第 ${i + 1} 条缺少非空 cmd`);
-    }
-    try {
-      rules.push({ match: new RegExp(match), cmd });
-    } catch {
-      throw new Error(`hooks.json 第 ${i + 1} 条 match 不是合法正则：${match}`);
-    }
-  }
-
-  const timeoutSec = obj.timeoutSec;
-  const timeoutMs = timeoutSec === undefined ? DEFAULT_HOOK_TIMEOUT_MS : Number(timeoutSec) * 1000;
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    throw new Error(`hooks.json timeoutSec 应为正数（秒），收到：${String(timeoutSec)}`);
-  }
-  return { rules, timeoutMs };
+  return parseHooksObject(raw);
 }
 
 /** 读取 hooks 文件；不存在视为无 hooks（正常路径），其余错误上抛。 */

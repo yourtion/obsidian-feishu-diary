@@ -9,6 +9,8 @@ import {
   saveState,
   loadState,
   buildSettings,
+  readConfigFile,
+  type FileConfig,
 } from "../src/node/config.ts";
 
 test("args 优先于 env，env 优先于默认", () => {
@@ -149,4 +151,104 @@ test("buildSettings：显式配置 > 状态文件 > 默认", () => {
   const noArg = resolveConfig(["--app-id", "a", "--app-secret", "s"], {});
   assert.ok(noArg.config);
   assert.equal(buildSettings(noArg.config, { nickname: "状态里的" }).nickname, "状态里的");
+});
+
+// ---------- 配置文件层（~/.feishu-diary.json，init 的产物） ----------
+
+const FILE: FileConfig = {
+  appId: "cli_file",
+  appSecret: "s_file",
+  dir: "/tmp/file-dir",
+  ownerOpenId: "ou_file",
+  nickname: "文件称呼",
+};
+
+test("配置文件层：args > env > 文件 > 默认", () => {
+  const onlyFile = resolveConfig([], {}, FILE);
+  assert.ok(onlyFile.config);
+  assert.equal(onlyFile.config.appId, "cli_file");
+  assert.equal(onlyFile.config.appSecret, "s_file");
+  assert.equal(onlyFile.config.dir, path.resolve("/tmp/file-dir"));
+  assert.equal(onlyFile.config.ownerOpenId, "ou_file");
+  assert.equal(onlyFile.config.nickname, "文件称呼");
+  assert.equal(onlyFile.config.hooksInline, null);
+
+  const fromEnv = resolveConfig([], { FEISHU_APP_ID: "cli_env", FEISHU_APP_SECRET: "s_env" }, FILE);
+  assert.ok(fromEnv.config);
+  assert.equal(fromEnv.config.appId, "cli_env"); // env 覆盖文件
+  assert.equal(fromEnv.config.appSecret, "s_env");
+
+  const fromEnvPartial = resolveConfig([], { FEISHU_APP_ID: "cli_env" }, FILE);
+  assert.ok(fromEnvPartial.config);
+  assert.equal(fromEnvPartial.config.appSecret, "s_file"); // env 未给的仍取文件
+
+  const fromArg = resolveConfig(["--app-id", "cli_args"], {}, FILE);
+  assert.ok(fromArg.config);
+  assert.equal(fromArg.config.appId, "cli_args");
+});
+
+test("配置文件 hooks 内联：生效；显式 hooks-file（args/env）时失效；坏结构报错", () => {
+  const hooks = {
+    timeoutSec: 120,
+    hooks: [{ match: "https://x\\.cn/", cmd: "echo hi" }],
+  };
+  const base = ["--app-id", "a", "--app-secret", "s", "--dir", "/tmp/d"];
+
+  const inline = resolveConfig(base, {}, { hooks });
+  assert.ok(inline.config);
+  assert.ok(inline.config.hooksInline);
+  assert.equal(inline.config.hooksInline.rules.length, 1);
+  assert.equal(inline.config.hooksInline.timeoutMs, 120_000);
+  assert.equal(inline.config.hooksInline.rules[0]?.cmd, "echo hi");
+
+  const explicitArg = resolveConfig([...base, "--hooks-file", "/tmp/h.json"], {}, { hooks });
+  assert.ok(explicitArg.config);
+  assert.equal(explicitArg.config.hooksInline, null);
+  assert.equal(explicitArg.config.hooksFile, "/tmp/h.json");
+
+  const explicitEnv = resolveConfig(base, { FEISHU_HOOKS_FILE: "/tmp/h.json" }, { hooks });
+  assert.ok(explicitEnv.config);
+  assert.equal(explicitEnv.config.hooksInline, null);
+
+  assert.throws(
+    () => resolveConfig(base, {}, { hooks: { hooks: [{ match: "", cmd: "x" }] } }),
+    /配置文件 hooks 字段/,
+  );
+});
+
+test("配置文件 reminder 字段：file 可关提醒/改时间，flag 与 env 仍最高", () => {
+  const base = ["--app-id", "a", "--app-secret", "s"];
+  const off = resolveConfig(base, {}, { reminderEnabled: false });
+  assert.ok(off.config);
+  assert.equal(off.config.reminderEnabled, false);
+
+  const time = resolveConfig(base, {}, { reminderTime: "20:00" });
+  assert.ok(time.config);
+  assert.equal(time.config.reminderTime, "20:00");
+
+  const envWins = resolveConfig(base, { FEISHU_NO_REMINDER: "1" }, { reminderEnabled: true });
+  assert.ok(envWins.config);
+  assert.equal(envWins.config.reminderEnabled, false);
+
+  assert.throws(() => resolveConfig(base, {}, { reminderTime: "9:30" }), /HH:mm/);
+});
+
+test("readConfigFile：不存在返回 null；正常读回；非法 JSON/字段类型错抛", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "feishu-config-"));
+  const file = path.join(dir, "config.json");
+  assert.equal(await readConfigFile(file), null);
+
+  await writeFile(file, `${JSON.stringify({ appId: "cli_x", reminderEnabled: false })}\n`, "utf8");
+  const cfg = await readConfigFile(file);
+  assert.equal(cfg?.appId, "cli_x");
+  assert.equal(cfg?.reminderEnabled, false);
+
+  await writeFile(file, "{broken", "utf8");
+  await assert.rejects(readConfigFile(file), /合法 JSON/);
+
+  await writeFile(file, JSON.stringify({ appId: 123 }), "utf8");
+  await assert.rejects(readConfigFile(file), /appId 应为字符串/);
+
+  await writeFile(file, JSON.stringify({ reminderEnabled: "yes" }), "utf8");
+  await assert.rejects(readConfigFile(file), /reminderEnabled 应为布尔值/);
 });

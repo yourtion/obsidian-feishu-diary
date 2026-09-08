@@ -37,11 +37,15 @@ src/
 ├── service.ts        # ★ 环境无关编排核心（去重→p2p→认主→意图→动作 + 提醒 tick + 回执），
 │                     #   零 obsidian import；注入 HttpApi/HttpInstance/StorageAdapter/persist
 ├── main.ts           # 插件壳：生命周期/SecretStorage/设置页/状态栏 + 装配 service
-├── cli.ts            # CLI 壳（bin）：args/env 配置 + 装配 service + SIGINT/SIGTERM 优雅退出
+├── cli.ts            # CLI 壳（bin）：init 子命令分发 + 配置文件/env/args 配置 + 装配 service
+│                     #   + SIGINT/SIGTERM 优雅退出
 ├── node/             # Node 运行时实现（CLI 侧）
 │   ├── http.ts       #   fetch 版 HttpApi + fetch 版 SDK HttpInstance
 │   ├── vault.ts      #   NodeFsVaultAdapter（tmp+rename 原子写 / trash→.trash / exists）
-│   └── config.ts     #   args>env>默认 配置解析（纯函数）+ 状态文件读写
+│   ├── config.ts     #   args>env>配置文件>默认 配置解析（纯函数）+ 配置/状态文件读写
+│   ├── init.ts       #   init 子命令：扫码建应用 → 写 ~/.feishu-diary.json（600）
+│   ├── hooks.ts      #   hooks 加载/校验（parseHooksObject 文件与内联共用）+ spawn 执行器
+│   └── qrcode-terminal.ts # 终端 ASCII 二维码（qrcode 核心矩阵自绘，半块字符）
 ├── settings.ts       # 设置类型与默认值（插件 App Secret 走 SecretStorage，CLI 走 env，均不在此）
 ├── feishu/           # 通道层
 │   ├── channel.ts    #   WSClient 包装 + normalizeIncoming（★ 事件规范化，有单测固化结构）
@@ -166,9 +170,20 @@ note 的正文，「记：」逃生口/命令词/媒体不受影响。富文本 
 飞书无独立 link 类型）同日支持：`channel.ts` 的 `flattenPost` 扁平化为 markdown
 （`a`→`[文字](href)`），post 从「没学会」变为正常记日记，插件同样受益。决策见 D11。
 
+**CLI init 子命令 + 配置文件（2026-09-08）**：`feishu-diary init` 扫码建应用（复用
+插件侧 `createAppByScan`，为其补了 `HttpApi` 注入参数与 timerApi shim——register.ts
+不再传递依赖 obsidian，插件/CLI 同一设备流实现）→ 终端 ASCII 二维码（qrcode 核心矩阵
+自绘，`node/qrcode-terminal.ts`）→ 写 `~/.feishu-diary.json`（凭据 + 扫码者 open_id
+预填认主，权限 600；已存在则问覆盖并备份 `.bak`）。运行时优先级 **args > env > 配置
+文件 > 默认**（`--config` / `FEISHU_DIARY_CONFIG` 改路径，坏配置启动即退出）；hooks
+可内联进配置文件（`hooks` 字段，显式 `--hooks-file` 时失效）或沿用 hooks.json。发布
+应用仍需手动（init 收尾给直达链接）。macOS 自启动不集成代码，文档
+`docs/autostart-macos.md`（launchd plist 模板 + bootstrap/bootout + nvm 路径坑）。
+决策见 D12。
+
 待验证：P0-1 断线补推实验（决定要不要历史消息补拉模块）。
 
-待开发：CLI 的 init 扫码子命令（可选）；审核反馈跟进（getSettingDefinitions
+待开发：审核反馈跟进（getSettingDefinitions
 声明式设置迁移——1.13.0+ 设置搜索，非阻塞）；P0-1 结论若需补拉则加历史消息
 模块；Phase 4（语音气泡样式、撤回事件同步 im.message.recalled_v1、ASR 自配
 OpenAI 兼容开关）。

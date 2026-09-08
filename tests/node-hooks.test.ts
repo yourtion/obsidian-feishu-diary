@@ -7,6 +7,7 @@ import {
   tokenize,
   runShellHook,
   parseHooksFile,
+  parseHooksObject,
   loadHooks,
   DEFAULT_HOOK_TIMEOUT_MS,
 } from "../src/node/hooks.ts";
@@ -89,4 +90,22 @@ test("runShellHook：超时终止并报错", async () => {
 
 test("runShellHook：命令为空报错", async () => {
   await assert.rejects(runShellHook("", "https://a.com/", 1000), /命令为空/);
+});
+
+test("parseHooksObject：对象版（配置文件内联共用），source 进错误文案", () => {
+  const ok = parseHooksObject(
+    { timeoutSec: 30, hooks: [{ match: "x\\.cn", cmd: "dl" }] },
+    "配置文件 hooks 字段",
+  );
+  assert.equal(ok.rules.length, 1);
+  assert.equal(ok.timeoutMs, 30_000);
+
+  assert.throws(
+    () => parseHooksObject({ hooks: [{ match: "[", cmd: "dl" }] }, "配置文件 hooks 字段"),
+    /配置文件 hooks 字段.*合法正则/s,
+  );
+  assert.throws(
+    () => parseHooksObject({}, "配置文件 hooks 字段"),
+    /配置文件 hooks 字段.*"hooks" 数组/s,
+  );
 });

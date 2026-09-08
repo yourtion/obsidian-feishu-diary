@@ -30,9 +30,10 @@ export default defineConfig([
     },
   },
   {
-    // service.ts 是双运行时共用模块（Obsidian 插件 + Node CLI）：globalThis 分支
-    // 仅在 CLI 下执行（插件里 window 恒存在，短路不触达），是刻意的 Node 兼容路径。
-    files: ["src/service.ts"],
+    // service.ts / register.ts 是双运行时共用模块（Obsidian 插件 + Node CLI）：
+    // globalThis 分支仅在 CLI 下执行（插件里 window 恒存在，短路不触达），
+    // 是刻意的 Node 兼容路径。
+    files: ["src/service.ts", "src/feishu/register.ts"],
     rules: {
       "obsidianmd/no-global-this": "off",
     },

@@ -1,15 +1,20 @@
 /**
- * 一键创建应用（扫码授权）——OAuth 2.0 Device Flow（RFC 8628）的 requestUrl 实现。
+ * 一键创建应用（扫码授权）——OAuth 2.0 Device Flow（RFC 8628），环境无关实现。
  *
  * 为什么不用 SDK 的 registerApp：其内部走 axios/XHR，在 Electron renderer 被 CORS
  * 拦截（accounts.feishu.cn 无 CORS 头，实测 Network Error）。协议仅 begin/poll 两个
- * action，此处按 SDK 同款语义重写，出站统一走 obsidian requestUrl（主进程）。
+ * action，此处按 SDK 同款语义重写，出站经注入的 HttpApi（插件 requestUrl 主进程、
+ * CLI 用 fetch），插件与 CLI 共用。
  *
  * 基座 preset:false（仅机器人能力、无业务权限），只申请下方显式声明的能力，
  * 与「bot 只认识一串匿名编号」的隐私理念一致。
  */
 import { gzipSync } from "node:zlib";
-import { postForm } from "./http.ts";
+import type { HttpApi } from "./http.ts";
+
+/** 定时器：插件（renderer 有 window）与 Node CLI 共用。 */
+const timerApi: { setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout } =
+  typeof window !== "undefined" ? window : globalThis;
 
 const FEISHU_ACCOUNTS = "https://accounts.feishu.cn";
 const LARK_ACCOUNTS = "https://accounts.larksuite.com";
@@ -70,12 +75,12 @@ interface PollResponse {
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => {
+    const timer = timerApi.setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
       resolve();
     }, ms);
     function onAbort(): void {
-      window.clearTimeout(timer);
+      timerApi.clearTimeout(timer);
       reject(new Error("abort"));
     }
     if (signal.aborted) {
@@ -88,15 +93,17 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 
 /**
  * 发起扫码建应用流程。resolve 即拿到凭据；用户拒绝/超时/取消则 reject（message 为错误码）。
+ * http 出站注入：插件传 obsidianHttp（requestUrl 主进程），CLI 传 nodeHttp（fetch）。
  */
 export async function createAppByScan(
+  http: HttpApi,
   callbacks: ScanCallbacks,
   signal: AbortSignal,
 ): Promise<RegisterResult> {
   // 1. begin：申请设备码与验证链接
   let begin: { status: number; data: BeginResponse };
   try {
-    begin = (await postForm(`${FEISHU_ACCOUNTS}${REG_ENDPOINT}`, {
+    begin = (await http.postForm(`${FEISHU_ACCOUNTS}${REG_ENDPOINT}`, {
       action: "begin",
       archetype: "PersonalAgent",
       auth_method: "client_secret",
@@ -139,7 +146,7 @@ export async function createAppByScan(
   const deadline = Date.now() + expireInSeconds * 1000;
 
   for (;;) {
-    const res = (await postForm(`${baseUrl}${REG_ENDPOINT}`, {
+    const res = (await http.postForm(`${baseUrl}${REG_ENDPOINT}`, {
       action: "poll",
       device_code: beginData.device_code,
     })) as { status: number; data: PollResponse };

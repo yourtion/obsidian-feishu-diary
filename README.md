@@ -42,6 +42,14 @@ The bot service is **off by default** and toggled per machine via "在本机启�
 The same pipeline ships as an npm package (`feishu-diary`) for headless environments — a home server, a NAS, a Raspberry Pi, or simply anywhere without Obsidian:
 
 ```sh
+npx feishu-diary init    # scan a QR code to create the Feishu app, then publish it
+                         # (link provided) — writes ~/.feishu-diary.json (mode 600)
+npx feishu-diary         # runs with zero arguments, reading that config file
+```
+
+Prefer explicit credentials? Everything is overridable (`args > env > config file > defaults`):
+
+```sh
 npx feishu-diary --app-id cli_xxx --app-secret yyy --dir ~/diary
 # or via environment variables (a .env file works too, see --env-file)
 FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=yyy npx feishu-diary --dir ~/diary
@@ -52,7 +60,8 @@ Run `npx feishu-diary --help` for the full option list. Notes:
 - Files land in `<dir>/YYYY/YYYY-MM-DD.md` with the same data contract as the plugin (append-only, atomic writes, attachments under `<dir>/attachments/`)
 - Runtime state (owner binding, nickname, reminder state) lives in `<dir>/.feishu-diary-state.json` — back up the directory and you've backed up everything
 - Recalled entries move to `<dir>/.trash/` (recoverable) instead of the system trash
-- **URL hooks** (CLI only): drop a `hooks.json` next to your diary and matching links get routed to your own commands — the original message still lands in the diary, each matched URL runs your command (URL appended as the last argument, no shell), and the command's stdout is appended to the day's file. Podcast downloads, doc archiving, whatever you script. See `--help` for the file format
+- **URL hooks** (CLI only): either inline in the config file (`"hooks": {...}`) or as a `hooks.json` next to your diary — matching links get routed to your own commands, the original message still lands in the diary, each matched URL runs your command (URL appended as the last argument, no shell), and the command's stdout is appended to the day's file. Podcast downloads, doc archiving, whatever you script. See `--help` for the format
+- Auto-start on macOS: see [docs/autostart-macos.md](docs/autostart-macos.md) (launchd plist template)
 - ⚠️ One app, one client: if the Obsidian plugin and the CLI connect with the same app credentials at the same time, Feishu delivers each event to a random one of them. Don't run both against the same app.
 
 Requires Node.js ≥ 18.
@@ -85,14 +94,22 @@ Channel verification and onboarding scripts live in [scripts/p0/README.md](scrip
 ### CLI 用法
 
 ```sh
+npx feishu-diary init    # 扫码创建飞书应用（确认页也可复用已有应用），按提示发布后
+                         # 生成 ~/.feishu-diary.json（含凭据与主人 open_id，权限 600）
+npx feishu-diary         # 零参数启动，自动读该配置文件
+```
+
+也支持显式传参/环境变量（优先级 参数 > 环境变量 > 配置文件 > 默认，`--env-file` 可加载 .env）：
+
+```sh
 npx feishu-diary --app-id cli_xxx --app-secret yyy --dir ~/diary
-# 或走环境变量（支持 --env-file 加载 .env）
 FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=yyy npx feishu-diary --dir ~/diary
 ```
 
 - 数据契约与插件完全一致；运行状态（认主/称呼/提醒）存 `<dir>/.feishu-diary-state.json`
 - 撤回的条目移入 `<dir>/.trash/`（可恢复），不走系统废纸篓
-- **URL hooks（仅 CLI）**：在日记目录放 `hooks.json`，命中规则的链接自动交给自定义命令处理——原文照常记日记，命令 stdout 追加进当天日记（URL 作为命令最后一个参数，不经 shell）；配置格式见 `npx feishu-diary --help`
+- **URL hooks（仅 CLI）**：写在配置文件 `"hooks"` 字段或日记目录的 `hooks.json`——命中规则的链接自动交给自定义命令处理，原文照常记日记，命令 stdout 追加进当天日记（URL 作为命令最后一个参数，不经 shell）；配置格式见 `npx feishu-diary --help`
+- macOS 开机自启：[docs/autostart-macos.md](docs/autostart-macos.md)（launchd 配置模板）
 - ⚠️ 同一应用凭据勿与 Obsidian 插件同时在线（飞书会把事件随机推给其中一个客户端）
 - 要求 Node.js ≥ 18，完整参数见 `npx feishu-diary --help`
 
