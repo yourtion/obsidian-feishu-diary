@@ -24,10 +24,20 @@ if (versions[next]) {
   process.exit(1);
 }
 
-const dirty = execSync("git status --porcelain", { encoding: "utf8" }).trim();
-if (dirty) {
-  console.error("工作区有未提交变更，先提交再发布：\n" + dirty);
+// 已跟踪文件的未提交修改会挡发版（本地与 CI 从 tag 构建必须一致）；
+// untracked 不进构建产物，不挡——但提示确认，防新源码忘 add 后发布旧产物。
+const statusLines = execSync("git status --porcelain", { encoding: "utf8" })
+  .trim()
+  .split("\n")
+  .filter(Boolean);
+const blocking = statusLines.filter((l) => !l.startsWith("??"));
+const untracked = statusLines.filter((l) => l.startsWith("??"));
+if (blocking.length > 0) {
+  console.error("已跟踪文件有未提交变更，先提交再发布：\n" + blocking.join("\n"));
   process.exit(1);
+}
+if (untracked.length > 0) {
+  console.warn("⚠ 未跟踪文件不参与 CI 构建（确认无需提交后忽略）：\n" + untracked.join("\n"));
 }
 
 pkg.version = next;

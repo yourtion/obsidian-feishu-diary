@@ -35,7 +35,7 @@ if (!matched) {
   process.exit(1);
 }
 const kind = matched[1] === "wiki" ? "wiki" : matched[1] === "docx" ? "docx" : "doc";
-const linkToken = matched[2]!;
+const linkToken = matched[2] ?? "";
 
 interface ApiBody {
   code?: number;
