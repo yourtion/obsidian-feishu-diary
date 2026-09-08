@@ -17,7 +17,7 @@ import type { HttpApi } from "./feishu/http.ts";
 import { classify } from "./core/intents.ts";
 import { extractUrls, matchHooks } from "./core/urls.ts";
 import type { HookHit, UrlHookRule } from "./core/urls.ts";
-import { DiaryWriter, diaryPath } from "./core/writer.ts";
+import { DiaryWriter } from "./core/writer.ts";
 import type { StorageAdapter } from "./core/writer.ts";
 import { attachmentBlock, attachmentPath } from "./core/attachments.ts";
 import type { MediaKind } from "./core/attachments.ts";
@@ -365,7 +365,8 @@ export class FeishuDiaryService {
     if (timeParts(now).time < settings.reminderTime) return;
 
     const today = logicalDate(now);
-    const hasTodayEntry = await this.opts.storage.exists(diaryPath(settings.rootDir, today));
+    // 月文件常年在（任何一天写过当月文件就存在），「今天写没写」改查日段
+    const hasTodayEntry = this.writer ? await this.writer.hasEntry(today) : false;
 
     const decision = decideReminder(settings.reminderState, { today, hasTodayEntry });
     if (decision.state !== settings.reminderState) {

@@ -89,11 +89,6 @@ export function logicalDate(ms: number, dayStartHour: number = DEFAULT_DAY_START
   return parts.date;
 }
 
-/** 日记文件名：YYYY-MM-DD.md（内容为逻辑日）。 */
-export function diaryFileName(logical: string): string {
-  return `${logical}.md`;
-}
-
 /** 日记目录按年分组：YYYY/。 */
 export function diaryYearDir(logical: string): string {
   return logical.slice(0, 4);

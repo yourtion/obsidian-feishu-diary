@@ -10,7 +10,7 @@ Also available as a **standalone CLI** — `npx feishu-diary` writes the same di
 
 - **Scan to set up**: create your Feishu app by scanning a QR code in the plugin settings — permissions and event subscriptions are pre-configured automatically
 - **Per-machine enable switch**: the bot service is off by default and toggled per machine (stored in local storage, not synced with your vault) — safe to run the same vault on multiple machines, only one of them listens
-- **Send anything, it's a diary entry**: each message becomes an entry in `FeishuDiary/YYYY/YYYY-MM-DD.md`, with messages in the same minute sharing one timestamp heading
+- **Send anything, it's a diary entry**: each message becomes an entry in `FeishuDiary/YYYY/YYYY-MM.md` (one file per month, one `## day` section per day), with messages in the same minute sharing one timestamp heading
 - **Two-state reaction receipts**: ⏳ received → ✅ done, no chat noise; only commands and errors produce text replies
 - **Attachments**: images/videos embedded, files linked, voice notes stored as-is (Ogg/Opus, playable inside Obsidian)
 - **Natural language commands**: 撤回 (undo last) / 结束 / 晚安 (seal the day) / 在吗 (ping) / 记：xxx (force note) / 帮助 (help) / 叫我XX (set nickname)
@@ -57,7 +57,7 @@ FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=yyy npx feishu-diary --dir ~/diary
 
 Run `npx feishu-diary --help` for the full option list; the config file fields and URL hooks are documented in [docs/config.md](docs/config.md). Notes:
 
-- Files land in `<dir>/YYYY/YYYY-MM-DD.md` with the same data contract as the plugin (append-only, atomic writes, attachments under `<dir>/attachments/`)
+- Files land in `<dir>/YYYY/YYYY-MM.md` (one file per month) with the same data contract as the plugin (append-only, atomic writes, attachments under `<dir>/attachments/`)
 - Runtime state (owner binding, nickname, reminder state) lives in `<dir>/.feishu-diary-state.json` — back up the directory and you've backed up everything
 - Recalled entries move to `<dir>/.trash/` (recoverable) instead of the system trash
 - **URL hooks** (CLI only): either inline in the config file (`"hooks": {...}`) or as a `hooks.json` next to your diary — matching links get routed to your own commands, the original message still lands in the diary, each matched URL runs your command (URL appended as the last argument, no shell), and the command's stdout is appended to the day's file. Podcast downloads, doc archiving, whatever you script. See `--help` for the format
@@ -84,7 +84,7 @@ Channel verification and onboarding scripts live in [scripts/p0/README.md](scrip
 
 - **扫码即用**：设置页扫码一键创建飞书自建应用（自动配好权限与事件订阅），无需进开发者后台
 - **本机启用开关**：服务默认关闭，按机器开关（只存本机，不随 vault 同步）——多机共用同一 vault 也不怕抢消息，只在指定机器上监听
-- **发什么记什么**：一次发送 = 一条日记，同分钟消息共享时间戳段头
+- **发什么记什么**：一次发送 = 一条日记，每月一文件（每天一个 `## 日` 段），同分钟消息共享时间戳段头
 - **表情两态回执**：⏳ 收到 → ✅ 完成，不打扰；命令与异常才发文字
 - **附件入库**：图片/视频嵌入、文件链接、语音 🎤 原声直存（Obsidian 可直接播）
 - **自然语言命令**：撤回 / 结束 / 晚安 / 在吗 / 记：xxx / 帮助 / 叫我XX

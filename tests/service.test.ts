@@ -39,6 +39,10 @@ class MemoryStorage implements StorageAdapter {
     return this.files.has(path);
   }
 
+  async read(path: string): Promise<string | null> {
+    return this.files.get(path) ?? null;
+  }
+
   async writeBinary(path: string, data: ArrayBuffer): Promise<string> {
     this.binaries.set(path, data);
     return path.slice(path.lastIndexOf("/") + 1);
@@ -153,13 +157,13 @@ async function waitFor(cond: () => boolean, ms = 2000): Promise<void> {
   }
 }
 
-const DAY_FILE = "FeishuDiary/2026/2026-09-05.md";
+const DAY_FILE = "FeishuDiary/2026/2026-09.md";
 
 test("文字消息写入当天文件并走完两态回执 OnIt→摘除→DONE", async () => {
   const h = await makeService();
   await h.send(textMsg());
   await drain(h);
-  const content = h.storage.files.get("FeishuDiary/2026/2026-09-05.md") ?? "";
+  const content = h.storage.files.get("FeishuDiary/2026/2026-09.md") ?? "";
   assert.ok(content.includes("今天很开心"));
   assert.deepEqual(
     h.client.reactions.map((r) => r.emoji),
@@ -175,7 +179,7 @@ test("同一 message_id 重复推送只处理一次", async () => {
   await h.send(msg);
   await h.send(msg);
   await drain(h);
-  const content = h.storage.files.get("FeishuDiary/2026/2026-09-05.md") ?? "";
+  const content = h.storage.files.get("FeishuDiary/2026/2026-09.md") ?? "";
   assert.equal(content.split("今天很开心").length - 1, 1);
   assert.deepEqual(
     h.client.reactions.map((r) => r.emoji),
@@ -210,7 +214,7 @@ test("首条消息自动认主并回复，且该消息继续按正文落库", as
   assert.equal(h.settings.ownerOpenId, "ou_new");
   assert.match(h.client.texts[0]?.text ?? "", /已认主/);
   assert.ok(h.persisted());
-  const content = h.storage.files.get("FeishuDiary/2026/2026-09-05.md") ?? "";
+  const content = h.storage.files.get("FeishuDiary/2026/2026-09.md") ?? "";
   assert.ok(content.includes("你好"));
   await h.svc.stop();
 });
@@ -294,7 +298,7 @@ test("媒体消息：下载附件入库并写笔记块", async () => {
   );
   await drain(h);
   assert.equal(h.storage.binaries.size, 1);
-  const content = h.storage.files.get("FeishuDiary/2026/2026-09-05.md") ?? "";
+  const content = h.storage.files.get("FeishuDiary/2026/2026-09.md") ?? "";
   assert.ok(content.includes("image"));
   assert.deepEqual(
     h.client.reactions.map((r) => r.emoji),

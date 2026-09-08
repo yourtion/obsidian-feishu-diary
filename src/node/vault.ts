@@ -75,6 +75,15 @@ export class NodeFsVaultAdapter implements StorageAdapter {
     }
   }
 
+  async read(filePath: string): Promise<string | null> {
+    try {
+      return await readFile(filePath, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      return null;
+    }
+  }
+
   /** 目录内同名冲突消解：name.ext → name-xxxx.ext。 */
   private async dedupName(dir: string, name: string): Promise<string> {
     let target = path.join(dir, name);

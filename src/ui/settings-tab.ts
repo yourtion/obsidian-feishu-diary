@@ -113,7 +113,7 @@ export class FeishuDiarySettingTab extends PluginSettingTab {
         items: [
           {
             name: "日记根目录",
-            desc: "vault 内的目录，日记按「根目录/年/日期.md」落盘",
+            desc: "vault 内的目录，日记按「根目录/年/年-月.md」落盘（每月一文件）",
             control: { type: "folder", key: "rootDir" },
           },
         ],

@@ -56,6 +56,12 @@ export class ObsidianVaultAdapter implements StorageAdapter {
     return this.vault.getAbstractFileByPath(normalizePath(path)) instanceof TFile;
   }
 
+  async read(path: string): Promise<string | null> {
+    const file = this.vault.getAbstractFileByPath(normalizePath(path));
+    if (!(file instanceof TFile)) return null;
+    return this.vault.read(file);
+  }
+
   /**
    * 写入二进制附件；同名冲突时插入 4 位随机后缀消解（同分钟两条同名图片）。
    * 返回实际落盘的文件名（wikilink 用）。

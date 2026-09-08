@@ -22,16 +22,16 @@ CLI（`feishu-diary`）的全部用户配置：一份 `~/.feishu-diary.json` 管
 
 ### 字段一览
 
-| 字段              | 类型     | 默认                          | 说明                                   |
-| ----------------- | -------- | ----------------------------- | -------------------------------------- |
-| `appId`           | string   | —（必填三选一）               | 飞书自建应用 App ID（env: FEISHU_APP_ID） |
-| `appSecret`       | string   | —（必填三选一）               | App Secret（env: FEISHU_APP_SECRET）   |
-| `dir`             | string   | `./FeishuDiary`（相对启动处） | 日记根目录，写绝对路径最稳             |
-| `ownerOpenId`     | string   | —                             | 主人 open_id；缺省时第一条消息的发送者自动认主（init 扫码自动预填） |
-| `nickname`        | string   | `""`                          | 机器人称呼（也可聊天里发「叫我XX」）   |
-| `reminderTime`    | string   | `21:30`                       | 提醒时间 HH:mm（东八区）               |
-| `reminderEnabled` | boolean  | `true`                        | 每日提醒开关                           |
-| `hooks`           | object   | —                             | 内联 URL hooks（见下文）               |
+| 字段              | 类型    | 默认                          | 说明                                                                |
+| ----------------- | ------- | ----------------------------- | ------------------------------------------------------------------- |
+| `appId`           | string  | —（必填三选一）               | 飞书自建应用 App ID（env: FEISHU_APP_ID）                           |
+| `appSecret`       | string  | —（必填三选一）               | App Secret（env: FEISHU_APP_SECRET）                                |
+| `dir`             | string  | `./FeishuDiary`（相对启动处） | 日记根目录，写绝对路径最稳；日记按 `年/年-月.md` 每月一文件落盘     |
+| `ownerOpenId`     | string  | —                             | 主人 open_id；缺省时第一条消息的发送者自动认主（init 扫码自动预填） |
+| `nickname`        | string  | `""`                          | 机器人称呼（也可聊天里发「叫我XX」）                                |
+| `reminderTime`    | string  | `21:30`                       | 提醒时间 HH:mm（东八区）                                            |
+| `reminderEnabled` | boolean | `true`                        | 每日提醒开关                                                        |
+| `hooks`           | object  | —                             | 内联 URL hooks（见下文）                                            |
 
 `stateFile`（状态文件路径）与 `hooksFile`（hooks 文件路径）不进配置文件：前者是
 运行时习得状态不属于用户配置（`--state-file` / `FEISHU_STATE_FILE` 可改），后者被
@@ -51,8 +51,14 @@ CLI（`feishu-diary`）的全部用户配置：一份 `~/.feishu-diary.json` 管
   "hooks": {
     "timeoutSec": 600,
     "hooks": [
-      { "match": "https://[a-z]+\\.feishu\\.cn/(docx|wiki|docs|doc)/", "cmd": "node /abs/path/scripts/hooks/feishu-doc.ts" },
-      { "match": "https://([^/]*\\.)?example\\.com/podcast/", "cmd": "yt-dlp -x --audio-format opus -o /abs/podcasts/%(title)s.%(ext)s" }
+      {
+        "match": "https://[a-z]+\\.feishu\\.cn/(docx|wiki|docs|doc)/",
+        "cmd": "node /abs/path/scripts/hooks/feishu-doc.ts"
+      },
+      {
+        "match": "https://([^/]*\\.)?example\\.com/podcast/",
+        "cmd": "yt-dlp -x --audio-format opus -o /abs/podcasts/%(title)s.%(ext)s"
+      }
     ]
   }
 }
@@ -96,11 +102,11 @@ hook 无法误吞消息。
 
 ### 规则字段
 
-| 字段        | 说明                                                                 |
-| ----------- | -------------------------------------------------------------------- |
-| `match`     | JS 正则（字符串），对消息里提取出的**每个 URL** 测试，命中即执行      |
-| `cmd`       | 命令行；URL 追加为**最后一个参数**                                    |
-| `timeoutSec`| 超时（秒），默认 600；超时 SIGTERM，以文字消息回执失败               |
+| 字段         | 说明                                                             |
+| ------------ | ---------------------------------------------------------------- |
+| `match`      | JS 正则（字符串），对消息里提取出的**每个 URL** 测试，命中即执行 |
+| `cmd`        | 命令行；URL 追加为**最后一个参数**                               |
+| `timeoutSec` | 超时（秒），默认 600；超时 SIGTERM，以文字消息回执失败           |
 
 ### 执行语义（重要）
 

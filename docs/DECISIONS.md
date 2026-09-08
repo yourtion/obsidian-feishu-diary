@@ -93,6 +93,19 @@ Ogg/Opus 直存（Obsidian 可直接播）；飞书官方 ASR 是设置开关而
 - **init 复用插件扫码实现**：`createAppByScan` 补 `HttpApi` 注入参数 + timerApi shim 后，register.ts 不再传递依赖 obsidian——插件（requestUrl）与 CLI（fetch）共用同一设备流实现（取代 p0:init 里 SDK registerApp 的并行实现）。扫码者 open_id 预填进配置文件（同插件 `applyScanResult` 语义）。终端二维码用 qrcode 核心生成器矩阵自绘半块字符（与插件侧 qrcode-svg 同源，顶层 API 会把 pngjs 拉进 bundle）。发布新版本仍需用户手动（API 涉及审核流），init 收尾输出直达链接。
 - **自启动不集成，文档化**（`docs/autostart-macos.md`）：launchd 的路径硬约束（不继承 shell PATH、`~` 不展开、nvm 版本化路径每升版就变）使代码自动探测反而脆；一份可按机器微调的 plist 模板 + bootstrap/bootout 命令是更稳的形态，CLI 零增重。
 
+## D13 · 数据契约 v2：每天一文件 → 每月一文件（2026-09-08）
+
+**背景**：每天一个文件积累太快，一年 365 个；月文件（`YYYY/YYYY-MM.md`）内每天一个
+`## MM-DD 周X` 日段，导航更顺。推翻 D2 的内部布局，其余契约规则（只追加/原子读改写/
+frontmatter 仅创建时写/附件永不删）不变。
+
+- **不做旧数据迁移**：尚无存量用户（插件在审、CLI 自用），旧日文件原地保留为历史数据，程序不再读写——省掉迁移机制与列举接口，`StorageAdapter` 只为提醒判断新增 `read`。
+- **文件结构**：frontmatter `month: YYYY-MM`（weekday 对月无意义，去掉）；月一级标题 `# YYYY-MM`；天内 `## MM-DD 周X` 日段；时间戳段头 `**HH:mm**` 与同分钟合并语义不变，**作用域收窄到日段内**（凌晨消息归前一日段，该段未必在文件尾——activeHeading 从文件尾改为段内查找）。
+- **日段按日期排序插入**：补推/乱序消息（逻辑日早于文件尾日段）插到正确段位，不拆段不乱序。
+- **seal/recall 段内语义**（修复 v1 两个隐性问题）：封存「今天是否已封存」从全文 contains 改为段内判断（v1 会把任一天封存误判为今天已封存）；对不存在的日段封存改为建段留痕（v1 会产出无骨架怪文件）。撤回在段内进行，段内撤空回收该段，**仅当整月只剩骨架才 trash 文件**（v1 撤空即 trash 天文件）。
+- **提醒判断**：`hasTodayEntry` 从「当天文件存在」改为 `writer.hasEntry`（月文件查日段）——月文件一旦存在便常在，文件存在性不再表征「今天写过」；封存留痕的段也算写过（晚安后不再提醒）。
+- **附件布局不变**：`attachments/YYYY/YYYY-MM-DD-HHmm-名.扩展`——文件名含完整日期天然唯一，无需跟随月文件调整。
+
 ## 技术栈与架构约定
 
 - TS strict + oxlint + oxfmt + esbuild + node:test（Node 原生 type-stripping 跑测试，零测试框架依赖）
